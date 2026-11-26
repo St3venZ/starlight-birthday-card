@@ -34,16 +34,6 @@ jobs:
       - name: Typecheck and build
         run: npm run build
 
-      # Static hosts (GitHub Pages) have no SPA fallback, so deep links like
-      # /create and /c/<shortId> would 404. Emit a real index.html per route.
-      - name: Generate SPA route fallbacks
-        run: |
-          mkdir -p dist/create
-          cp dist/index.html dist/create/index.html
-          mkdir -p dist/c
-          cp dist/index.html dist/c/index.html
-          cp dist/index.html dist/404.html
-
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
