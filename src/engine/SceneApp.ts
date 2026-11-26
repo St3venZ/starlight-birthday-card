@@ -127,6 +127,30 @@ function computeAdaptiveMaxDpr(): number {
   return isCoarseOrCompact ? 1.5 : 2.0;
 }
 
+/**
+ * Phones spend most of their GPU budget on fill rate: a full-screen bloom
+ * chain plus a nebula shader plus thousands of additive particles. These
+ * budgets keep the scene fluid instead of dropping resolution mid-animation.
+ */
+function computeParticleBudget(): number {
+  if (typeof window === 'undefined') return 3200;
+  const coarse = window.matchMedia?.('(pointer: coarse)').matches;
+  const small = Math.min(window.innerWidth, window.innerHeight) < 768;
+  return coarse || small ? 2200 : 3200;
+}
+
+function computeBloomResolutionScale(): number {
+  if (typeof window === 'undefined') return 0.5;
+  const coarse = window.matchMedia?.('(pointer: coarse)').matches;
+  const small = Math.min(window.innerWidth, window.innerHeight) < 768;
+  return coarse || small ? 0.35 : 0.5;
+}
+
+/** Antialiasing is redundant when the pixel ratio is already >= 1.5. */
+function shouldAntialias(pixelRatio: number): boolean {
+  return pixelRatio < 1.5;
+}
+
 export class SceneApp {
   private _layout: MosaicLayoutResult;
 
@@ -164,6 +188,7 @@ export class SceneApp {
   // Adaptive DPR & gentle FPS watchdog
   private maxPixelRatio: number;
   private currentPixelRatio: number;
+  private bloomResolutionScale = 0.5;
   private fpsSampleTime = 0;
   private fpsSampleFrames = 0;
   private lowFpsDuration = 0;
@@ -220,10 +245,11 @@ export class SceneApp {
 
     this.maxPixelRatio = computeAdaptiveMaxDpr();
     this.currentPixelRatio = Math.min(window.devicePixelRatio || 1, this.maxPixelRatio);
+    this.bloomResolutionScale = computeBloomResolutionScale();
 
     // ─── Renderer & Tone Mapping ─────────────────────────────────────
     this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
+      antialias: shouldAntialias(this.currentPixelRatio),
       alpha: false,
       powerPreference: 'high-performance',
     });
@@ -273,8 +299,8 @@ export class SceneApp {
     const renderPass = new RenderPass(this.scene, this.camera);
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(
-        Math.max(1, Math.floor(width * 0.5)),
-        Math.max(1, Math.floor(height * 0.5)),
+        Math.max(1, Math.floor(width * this.bloomResolutionScale)),
+        Math.max(1, Math.floor(height * this.bloomResolutionScale)),
       ),
       0.4,
       0.42,
@@ -291,7 +317,7 @@ export class SceneApp {
     this.backdrop = new CosmicBackdrop();
     this.scene.add(this.backdrop.group);
 
-    this.entranceParticles = new EntranceParticles(3200);
+    this.entranceParticles = new EntranceParticles(computeParticleBudget());
     this.scene.add(this.entranceParticles.points);
 
     this.fireworks = new FireworksSystem();
@@ -354,6 +380,12 @@ export class SceneApp {
   /**
    * Live Creator Studio API: updates greeting card textures & rebuilds 3D Age Mosaic
    * with new densityMode / layoutSeed / photos / copy without tearing down WebGL context.
+   *
+   * Rebuilding the deck allocates one canvas texture pair per card, so it is only
+   * done when the *layout* actually changed (photo count / order / density / seed).
+   * Plain copy edits (caption, back message, template) are applied in place, which
+   * keeps typing in the Studio smooth instead of re-uploading dozens of textures
+   * on every keystroke.
    */
   updateConfig(
     nextConfig: BirthdayCardConfig,
@@ -372,14 +404,19 @@ export class SceneApp {
     // Rebuild mosaic layout with densityMode & layoutSeed
     this._layout = this.buildLayoutForConfig(nextConfig);
 
-    const oldDeck = this.deck;
-    this.scene.remove(oldDeck.group);
-    oldDeck.dispose();
+    if (this.deckMatchesLayout(this._layout)) {
+      // Layout identity unchanged: patch textures in place, skip the full rebuild.
+      this.deck.applyConfig(this._layout);
+    } else {
+      const oldDeck = this.deck;
+      this.scene.remove(oldDeck.group);
+      oldDeck.dispose();
 
-    this.deck = this.createDeck(this._layout);
-    this.scene.add(this.deck.group);
+      this.deck = this.createDeck(this._layout);
+      this.scene.add(this.deck.group);
+      this.cameraRig.setMosaicBounds(this._layout.bounds);
+    }
 
-    this.cameraRig.setMosaicBounds(this._layout.bounds);
     this.celebrationTriggered = false;
 
     const targetAct = options?.jumpToAct ?? this.act;
@@ -418,6 +455,41 @@ export class SceneApp {
     }
 
     this.emitMemoryProgress();
+  }
+
+  /**
+   * Compares the currently mounted deck against a freshly computed layout to
+   * decide whether a full rebuild is really required. Geometry depends on card
+   * size, slot count, per-slot position and the memory/preset assignment.
+   */
+  private deckMatchesLayout(next: MosaicLayoutResult): boolean {
+    const prev = this.deck.layout;
+    if (!prev) return false;
+    if (prev.slots.length !== next.slots.length) return false;
+    if (
+      Math.abs(prev.cardWidth - next.cardWidth) > 1e-4 ||
+      Math.abs(prev.cardHeight - next.cardHeight) > 1e-4
+    ) {
+      return false;
+    }
+
+    for (let i = 0; i < next.slots.length; i += 1) {
+      const a = prev.slots[i];
+      const b = next.slots[i];
+      if (a.kind !== b.kind) return false;
+      if (
+        Math.abs(a.position.x - b.position.x) > 1e-4 ||
+        Math.abs(a.position.y - b.position.y) > 1e-4 ||
+        Math.abs(a.position.z - b.position.z) > 1e-4
+      ) {
+        return false;
+      }
+      const aKey = a.memory?.id ?? a.preset?.id ?? '';
+      const bKey = b.memory?.id ?? b.preset?.id ?? '';
+      if (aKey !== bKey) return false;
+    }
+
+    return true;
   }
 
   /**
@@ -1471,8 +1543,8 @@ export class SceneApp {
     this.composer.setPixelRatio(this.currentPixelRatio);
     this.composer.setSize(width, height);
     this.bloomPass.setSize(
-      Math.max(1, Math.floor(width * 0.5)),
-      Math.max(1, Math.floor(height * 0.5)),
+      Math.max(1, Math.floor(width * this.bloomResolutionScale)),
+      Math.max(1, Math.floor(height * this.bloomResolutionScale)),
     );
 
     this.cameraRig.onResize(width / height);

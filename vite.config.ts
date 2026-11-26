@@ -1,30 +1,38 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * Emits static SPA fallback pages (`/create/index.html`, `/c/index.html`,
- * `404.html`) so deep links work on hosts without server-side routing such as
- * GitHub Pages and Cloudflare Pages.
+ * Emits static SPA fallback pages so deep links survive on hosts without
+ * server-side routing (GitHub Pages project sites, Cloudflare Pages).
  *
- * The build uses `base: './'`, so a copy of index.html inside a subdirectory
- * would resolve `./assets/...` relative to that subdirectory and 404. Asset
- * URLs are therefore rewritten to the correct depth.
+ * Two distinct cases are handled, and they are NOT interchangeable:
+ *
+ *  1. `create/index.html`, `c/index.html` — served as real directories at a
+ *     known depth. Because the build uses `base: './'`, asset URLs must be
+ *     prefixed with the matching number of `../` segments.
+ *
+ *  2. `404.html` — served as the body of an arbitrary 404 response, so the
+ *     depth of the requested URL is unknown. Relative URLs would break at
+ *     `/c/<id>` (bare segment) and absolute `/assets/...` would break on a
+ *     GitHub Pages project site hosted under `/<repo>/`. GitHub Pages does not
+ *     substitute a `--base-path--` token, so the asset prefix is resolved from
+ *     the repository name that the Pages action exposes via GITHUB_REPOSITORY.
  */
-function spaFallbackPlugin() {
+function spaFallbackPlugin(): Plugin {
   return {
     name: 'spa-fallback',
-    apply: 'build' as const,
+    apply: 'build',
     closeBundle() {
       const dist = join(process.cwd(), 'dist');
       const html = readFileSync(join(dist, 'index.html'), 'utf8');
 
-      const routes = [
+      const depthRoutes = [
         { dir: 'create', depth: 1 },
         { dir: 'c', depth: 1 },
       ];
 
-      for (const { dir, depth } of routes) {
+      for (const { dir, depth } of depthRoutes) {
         const up = '../'.repeat(depth);
         const rewritten = html
           .replace(/(src|href)="\.\//g, (_m, attr) => `${attr}="${up}`)
@@ -33,12 +41,23 @@ function spaFallbackPlugin() {
         writeFileSync(join(dist, dir, 'index.html'), rewritten, 'utf8');
       }
 
-      // 404 fallback: absolute-from-root so it resolves regardless of depth.
-      writeFileSync(
-        join(dist, '404.html'),
-        html.replace(/(src|href)="\.\//g, (_m, attr) => `${attr}="/`),
-        'utf8',
+      // Resolve the site root path. On a GitHub Pages *project* site the app is
+      // served from /<repo>/, so a root-absolute /assets/... would 404.
+      const repo = process.env.GITHUB_REPOSITORY?.split('/')[1];
+      const isUserSite = Boolean(repo?.toLowerCase().endsWith('.github.io'));
+      const basePath =
+        process.env.SPA_FALLBACK_BASE ??
+        (repo && !isUserSite ? `/${repo}/` : '/');
+
+      const notFound = html.replace(
+        /(src|href)="\.\//g,
+        (_m, attr) => `${attr}="${basePath}`,
       );
+      writeFileSync(join(dist, '404.html'), notFound, 'utf8');
+
+      // Also emit an explicit /c/index.html style fallback for the share prefix
+      // already handled above; log the resolved base so CI logs are unambiguous.
+      console.log(`[spa-fallback] asset base for 404.html = ${basePath}`);
     },
   };
 }

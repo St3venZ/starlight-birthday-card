@@ -116,6 +116,13 @@ function bootstrap(): void {
   let routeVersion = 0;
   let inRehearsal = false;
 
+  // Coalesced Studio → 3D updates (see onConfigChange)
+  let studioUpdateTimer: number | null = null;
+  let pendingStudioUpdate: {
+    config: BirthdayCardConfig;
+    opts?: { jumpToAct?: SceneAct };
+  } | null = null;
+
   // Safety fallback so boot veil never stays stuck
   const bootFallbackTimer = window.setTimeout(dismissBootVeil, 3800);
 
@@ -131,6 +138,12 @@ function bootstrap(): void {
   };
 
   const cleanupCurrentRoute = (): void => {
+    if (studioUpdateTimer !== null) {
+      window.clearTimeout(studioUpdateTimer);
+      studioUpdateTimer = null;
+    }
+    pendingStudioUpdate = null;
+
     activeRouteCleanup.forEach((fn) => fn());
     activeRouteCleanup = [];
 
@@ -278,29 +291,45 @@ function bootstrap(): void {
 
     const removeGestureUnlockers = (): void => {
       window.removeEventListener('pointerdown', firstGestureHandler, true);
+      window.removeEventListener('touchstart', firstGestureHandler, true);
       window.removeEventListener('keydown', firstGestureHandler, true);
+      window.removeEventListener('wheel', firstGestureHandler, true);
     };
 
     const firstGestureHandler = (): void => {
       unlockAudioOnce();
-      removeGestureUnlockers();
+      syncAudioUI();
+      if (sound.isPlaying()) {
+        removeGestureUnlockers();
+      }
     };
 
-    if (config.audio.enabled && !sound.isMuted() && !opts.studioMode) {
-      window.addEventListener('pointerdown', firstGestureHandler, { capture: true, passive: true });
+    // Music should come up on its own. Browsers forbid audible playback until the
+    // visitor has interacted, so we attempt it immediately and retry on the very
+    // first gesture (touch, click, key or scroll) anywhere on the page. This also
+    // covers the Studio, where music previously never started at all.
+    if (config.audio.enabled && !sound.isMuted()) {
+      window.addEventListener('pointerdown', firstGestureHandler, {
+        capture: true,
+        passive: true,
+      });
+      window.addEventListener('touchstart', firstGestureHandler, {
+        capture: true,
+        passive: true,
+      });
       window.addEventListener('keydown', firstGestureHandler, { capture: true });
+      window.addEventListener('wheel', firstGestureHandler, {
+        capture: true,
+        passive: true,
+      });
     }
 
-    if (!opts.studioMode) {
-      void sound.tryAutoStart().then((started) => {
-        syncAudioUI();
-        if (started) {
-          removeGestureUnlockers();
-        }
-      });
-    } else {
+    void sound.tryAutoStart().then((started) => {
       syncAudioUI();
-    }
+      if (started) {
+        removeGestureUnlockers();
+      }
+    });
 
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!sceneApp) return;
@@ -619,7 +648,21 @@ function bootstrap(): void {
           mounted.overlay.updateConfig(validated);
           mounted.sound.setMuted(!validated.audio.enabled);
           mounted.overlay.setAudioState(mounted.sound.isPlaying(), mounted.sound.isMuted());
-          mounted.scene.updateConfig(validated, opts);
+
+          // Debounce and coalesce 3D updates. The Studio emits on every keystroke
+          // and every drag frame; applying each one immediately rebuilds layout
+          // maths and re-uploads textures, which is what made the mobile preview
+          // stutter. Bursts are merged into a single trailing update.
+          pendingStudioUpdate = { config: validated, opts };
+          if (studioUpdateTimer === null) {
+            studioUpdateTimer = window.setTimeout(() => {
+              studioUpdateTimer = null;
+              const next = pendingStudioUpdate;
+              pendingStudioUpdate = null;
+              if (!next) return;
+              mounted.scene.updateConfig(next.config, next.opts);
+            }, 120);
+          }
         },
         onFocusMemory: (memoryId) => {
           mounted.scene.focusMemoryById(memoryId);

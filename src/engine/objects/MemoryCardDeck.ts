@@ -522,6 +522,69 @@ export class MemoryCardDeck {
     this.hydrated = true;
   }
 
+  /**
+   * In-place content refresh for live Studio editing.
+   *
+   * Called when the layout identity is unchanged (same slots, same photo order)
+   * but the *copy* changed — caption, back-of-card message, template, title or
+   * date. Only the affected canvas textures are repainted, so typing stays
+   * smooth instead of reallocating every card and its GPU upload.
+   *
+   * Must be handed a layout whose slot order matches `this.layout`; the caller
+   * (`SceneApp.deckMatchesLayout`) guarantees that.
+   */
+  applyConfig(next: MosaicLayoutResult): void {
+    if (this.disposed) return;
+
+    for (let i = 0; i < this.entries.length; i += 1) {
+      const entry = this.entries[i];
+      const slot = next.slots[i];
+      if (!slot) continue;
+
+      if (slot.kind === 'memory' && slot.memory) {
+        // A real uploaded photo already replaced the procedural artwork on the
+        // front face; repainting the front would silently drop it.
+        if (!entry.hasRealImage) {
+          const frontCanvas = createMemoryFallbackCanvas(
+            slot.memory,
+            slot.memoryOrder ?? slot.index,
+            512,
+            680,
+          );
+          this.repaintEntryTexture(entry, 'front', frontCanvas);
+        }
+        const backCanvas = createMemoryBackCanvas(slot.memory, 640, 860);
+        this.repaintEntryTexture(entry, 'back', backCanvas);
+      }
+
+      entry.slot = slot;
+    }
+  }
+
+  /** Swaps a card-face canvas texture in place and disposes the previous one. */
+  private repaintEntryTexture(
+    entry: CardEntry,
+    face: 'front' | 'back',
+    canvas: HTMLCanvasElement,
+  ): void {
+    const previous = face === 'front' ? entry.frontTex : entry.backTex;
+    if (entry.sharesPresetTex) return;
+
+    const nextTex = this.createOwnedCanvasTex(canvas);
+    if (face === 'front') {
+      entry.frontTex = nextTex;
+      entry.frontMat.map = nextTex;
+      entry.frontMat.needsUpdate = true;
+    } else {
+      entry.backTex = nextTex;
+      entry.backMat.map = nextTex;
+      entry.backMat.needsUpdate = true;
+    }
+
+    this.ownedTextures.delete(previous);
+    previous.dispose();
+  }
+
   startAssembly(origin: THREE.Vector3): void {
     this.hydrateAllNow();
     this.mode = 'assembling';
