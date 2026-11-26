@@ -292,8 +292,18 @@ export class CreatorStudio {
 
   constructor(options: CreatorStudioOptions) {
     this.options = options;
-    this.defaultConfig = cloneConfig(options.initialConfig);
-    this.config = this.ensureConfigDefaults(cloneConfig(options.initialConfig));
+    // The homepage ships with six demo memories that have no real image file
+    // (`image: ''`), so the renderer draws procedural seaside artwork for them.
+    // Those are showcase content, not the creator's own memories: carrying them
+    // into the Studio made freshly uploaded photos appear to sit alongside
+    // unrelated "sunset" cards. Start the Studio from an empty library instead.
+    const studioBase = cloneConfig(options.initialConfig);
+    studioBase.memories = studioBase.memories.filter(
+      (memory) => typeof memory.image === 'string' && memory.image.trim().length > 0,
+    );
+
+    this.defaultConfig = cloneConfig(studioBase);
+    this.config = this.ensureConfigDefaults(cloneConfig(studioBase));
     this.selectedMemoryId = this.config.memories[0]?.id ?? null;
 
     this.rootEl = document.createElement('div');
@@ -365,7 +375,14 @@ export class CreatorStudio {
     this.cloudConfigured = cloudReady;
 
     if (savedDraft) {
-      this.config = this.ensureConfigDefaults(cloneConfig(savedDraft));
+      // Older drafts were saved before demo memories were excluded, so they can
+      // still contain the six procedural seaside placeholders. Drop them on load
+      // too, otherwise the same confusion comes back for returning creators.
+      const restored = cloneConfig(savedDraft);
+      restored.memories = restored.memories.filter(
+        (memory) => typeof memory.image === 'string' && memory.image.trim().length > 0,
+      );
+      this.config = this.ensureConfigDefaults(restored);
       this.selectedMemoryId = this.config.memories[0]?.id ?? null;
       this.draftStatus = 'restored';
       this.emitConfigChange({ jumpToAct: 'AWAITING_OPEN' }, true);
