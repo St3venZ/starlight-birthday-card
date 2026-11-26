@@ -265,6 +265,12 @@ function bootstrap(): void {
       onToggleMute: () => {
         const nextMuted = !sound.isMuted();
         sound.setMuted(nextMuted);
+        // Turning sound on must also *start* playback. Previously the button only
+        // unmuted, so on WeChat the first tap produced silence until the user
+        // interacted with the card itself.
+        if (!nextMuted && !sound.isPlaying()) {
+          sound.unlockAndStart();
+        }
         syncAudioUI();
         window.setTimeout(syncAudioUI, 140);
       },

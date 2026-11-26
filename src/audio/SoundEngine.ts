@@ -169,6 +169,54 @@ function getAudioContextConstructor(): typeof AudioContext | null {
   return window.AudioContext ?? w.webkitAudioContext ?? null;
 }
 
+/**
+ * WeChat's inline browser (X5 on Android, WKWebView on iOS) refuses to start
+ * audio until its native bridge reports ready, and it will not honour a
+ * deferred AudioContext.resume(). Registering this hook lets playback begin the
+ * moment the bridge is available, which is what makes the very first tap on the
+ * sound button work instead of requiring a second interaction.
+ */
+type WeixinBridgeWindow = Window & {
+  WeixinJSBridge?: { invoke: (name: string, params?: unknown) => void };
+  __wxjs_environment?: string;
+};
+
+function isWeChat(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /micromessenger/i.test(navigator.userAgent);
+}
+
+function whenWeChatBridgeReady(callback: () => void): void {
+  if (!isWeChat() || typeof document === 'undefined') {
+    callback();
+    return;
+  }
+
+  const w = window as WeixinBridgeWindow;
+  if (w.WeixinJSBridge) {
+    callback();
+    return;
+  }
+
+  const handler = (): void => {
+    document.removeEventListener('WeixinJSBridgeReady', handler);
+    callback();
+  };
+  document.addEventListener('WeixinJSBridgeReady', handler, { once: true });
+  // The event can fire before this script registers, so fall back to polling.
+  let attempts = 0;
+  const poll = window.setInterval(() => {
+    attempts += 1;
+    if ((window as WeixinBridgeWindow).WeixinJSBridge) {
+      window.clearInterval(poll);
+      document.removeEventListener('WeixinJSBridgeReady', handler);
+      callback();
+    } else if (attempts > 40) {
+      window.clearInterval(poll);
+    }
+  }, 100);
+}
+
 export class SoundEngine {
   private readonly config: BirthdayCardConfig['audio'];
   private readonly baseVolume: number;
@@ -254,30 +302,44 @@ export class SoundEngine {
   public unlockAndStart(): void {
     if (this.disposed) return;
 
-    this.ensureAudioGraph();
-    if (this.ctx && this.ctx.state === 'suspended') {
-      void this.ctx
-        .resume()
-        .then(() => {
-          if (this.disposed) return;
-          if (!this.useCustomBgm() && !this.muted) {
-            this.startProceduralBgm();
-            this.playing = true;
+    // WeChat only exposes its audio capability after the native bridge is ready.
+    // Retry once it is, otherwise the first tap silently does nothing.
+    if (isWeChat()) {
+      const w = window as WeixinBridgeWindow;
+      if (!w.WeixinJSBridge) {
+        whenWeChatBridgeReady(() => {
+          if (!this.disposed && !this.muted) {
+            this.startPlaybackNow();
           }
-        })
-        .catch(() => {});
+        });
+        // Still attempt immediately: newer WeChat builds allow direct playback.
+      }
     }
 
-    if (this.muted) {
-      return;
+    this.startPlaybackNow();
+  }
+
+  /**
+   * Synchronous audio start. Everything up to and including `resume()` must run
+   * inside the user gesture for WeChat / iOS Safari to grant playback.
+   */
+  private startPlaybackNow(): void {
+    if (this.disposed) return;
+
+    this.ensureAudioGraph();
+
+    if (this.ctx && this.ctx.state !== 'running') {
+      this.ctx.resume().catch(() => {});
     }
+
+    if (this.muted) return;
 
     if (this.useCustomBgm()) {
       void this.tryStartCustomAudio().then((ok) => {
         if (this.disposed) return;
         if (ok) {
           this.playing = true;
-        } else if (this.customFailed && this.ctx && this.ctx.state === 'running') {
+        } else if (this.customFailed && this.ctx) {
           this.startProceduralBgm();
           this.playing = true;
         }
@@ -285,7 +347,7 @@ export class SoundEngine {
       return;
     }
 
-    if (this.ctx && this.ctx.state === 'running') {
+    if (this.ctx) {
       this.startProceduralBgm();
       this.playing = true;
     }
@@ -296,18 +358,15 @@ export class SoundEngine {
     this.muted = muted;
 
     if (!muted) {
+      // WeChat's X5/WKWebView only honours resume() when it is invoked
+      // synchronously inside the user gesture; awaiting or deferring it into a
+      // promise chain loses the activation. resume() is therefore called here
+      // without awaiting, and playback is started optimistically.
       this.ensureAudioGraph();
-      if (this.ctx && this.ctx.state === 'suspended') {
-        void this.ctx
-          .resume()
-          .then(() => {
-            if (!this.disposed && !this.muted && !this.useCustomBgm()) {
-              this.startProceduralBgm();
-              this.playing = true;
-            }
-          })
-          .catch(() => {});
-      } else if (this.ctx && this.ctx.state === 'running' && !this.useCustomBgm()) {
+      if (this.ctx && this.ctx.state !== 'running') {
+        this.ctx.resume().catch(() => {});
+      }
+      if (this.ctx && !this.useCustomBgm()) {
         this.startProceduralBgm();
         this.playing = true;
       }

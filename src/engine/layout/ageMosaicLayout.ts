@@ -691,8 +691,6 @@ export function buildAgeMosaicLayout(
   // silhouette and shift every slot index, which invalidates pinned positions).
   // Instead the deck renders surplus placeholders as dim, non-interactive star
   // dots. This flag drives that: any cell beyond the photo count is filler.
-  const placeholderLimit = safeMemories.length;
-
   const activeCells = baseCells;
   const keptIds = new Set(activeCells.map((cell) => cell.id));
   const activeCellsByDigit = cellsByDigit;

@@ -120,11 +120,17 @@ function createStarlightEnvironment(
 }
 
 function computeAdaptiveMaxDpr(): number {
-  if (typeof window === 'undefined') return 1.5;
+  if (typeof window === 'undefined') return 2;
+  const dpr = window.devicePixelRatio || 1;
   const isCoarseOrCompact =
     window.matchMedia?.('(pointer: coarse)').matches ||
     Math.min(window.innerWidth, window.innerHeight) < 768;
-  return isCoarseOrCompact ? 1.5 : 2.0;
+
+  // Phones commonly report 2.5-3.5. Clamping to 1.5 made the whole 3D scene look
+  // soft, which read as low quality on WeChat. Render at (near) native density
+  // instead, and reclaim the GPU budget through bloom resolution, particle count
+  // and the FPS watchdog rather than by blurring the image.
+  return isCoarseOrCompact ? Math.min(dpr, 2.5) : Math.min(dpr, 2);
 }
 
 /**
@@ -136,14 +142,16 @@ function computeParticleBudget(): number {
   if (typeof window === 'undefined') return 3200;
   const coarse = window.matchMedia?.('(pointer: coarse)').matches;
   const small = Math.min(window.innerWidth, window.innerHeight) < 768;
-  return coarse || small ? 2200 : 3200;
+  return coarse || small ? 2000 : 3200;
 }
 
 function computeBloomResolutionScale(): number {
   if (typeof window === 'undefined') return 0.5;
   const coarse = window.matchMedia?.('(pointer: coarse)').matches;
   const small = Math.min(window.innerWidth, window.innerHeight) < 768;
-  return coarse || small ? 0.35 : 0.5;
+  // Bloom is a wide soft glow, so it survives a lower internal resolution while
+  // the crisp geometry and text above it render at full device density.
+  return coarse || small ? 0.28 : 0.5;
 }
 
 /** Antialiasing is redundant when the pixel ratio is already >= 1.5. */
