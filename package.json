@@ -1,0 +1,23 @@
+{
+  "name": "starlight-birthday-card",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A cinematic 3D interactive starlight birthday card built with Three.js, TypeScript, and Vite.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "three": "^0.172.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.172.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0",
+    "vitest": "^3.0.5"
+  }
+}

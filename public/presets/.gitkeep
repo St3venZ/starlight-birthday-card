@@ -1,0 +1,2 @@
+# 如需自定义 8 款装饰元素卡面，将竖版 3:4 图片放入此目录
+# 然后在 src/config/presets.ts 中填写 image: './presets/starlight-cake.jpg'

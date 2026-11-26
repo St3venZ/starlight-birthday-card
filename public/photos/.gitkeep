@@ -1,0 +1,2 @@
+# 将你的真实回忆照片放入此目录，例如 01.jpg、02.png
+# 然后在 src/config/card.config.ts 中填写 image: './photos/01.jpg'

@@ -1,0 +1,2 @@
+# 如需使用自定义背景音乐，将音频文件放入此目录（如 bgm.mp3）
+# 然后在 src/config/card.config.ts 中填写 audio.customBgmUrl: './audio/bgm.mp3'

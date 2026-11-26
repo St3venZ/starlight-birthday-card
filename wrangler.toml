@@ -1,0 +1,15 @@
+name = "starlight-birthday-card"
+compatibility_date = "2025-11-01"
+pages_build_output_dir = "dist"
+
+# 1. 必选（零信用卡可用）：创建 KV 命名空间，将终端返回的 id 替换下方占位符
+#    npx wrangler kv namespace create CARD_META
+[[kv_namespaces]]
+binding = "CARD_META"
+id = "YOUR_KV_NAMESPACE_ID"
+
+# 2. 可选进阶（在 Cloudflare Dashboard 开通免费 R2 后取消注释以下 3 行即可自动升级为 R2+KV 双存储）：
+#    npx wrangler r2 bucket create starlight-card-assets
+# [[r2_buckets]]
+# binding = "CARD_ASSETS"
+# bucket_name = "starlight-card-assets"
