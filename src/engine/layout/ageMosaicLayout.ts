@@ -687,13 +687,14 @@ export function buildAgeMosaicLayout(
 
   const totalDigitSlotsFull = baseCells.length;
 
-  // ─── Placeholder budget ──────────────────────────────────────────────────
-  // Only photos are interactive. Placeholder cards beyond the photo count are
-  // kept in the grid (so slot indices and pinned positions stay stable) but are
-  // flagged as `isPlaceholderOnly` and are removed from every interaction path
-  // and rendered uniformly dim in the deck.
+  // ─── Two rendering modes ────────────────────────────────────────────────
+  // Presentation mode (bundled demo, zero creator photos): the numeral is filled
+  // with decorative preset cards, which is what the showcase animation needs.
+  // Creator mode (at least one uploaded photo): only real photos become cards.
+  // Every remaining cell stays as an inert dark backing tile with no artwork and
+  // no interaction, so filler art never competes with the creator's photos.
   const photoCount = safeMemories.length;
-  const placeholderSlotsAllowed = photoCount;
+  const presentationMode = photoCount === 0;
 
   const activeCells = baseCells;
   const keptIds = new Set(activeCells.map((cell) => cell.id));
@@ -912,7 +913,24 @@ export function buildAgeMosaicLayout(
         isHalo: false,
         digitIndex: cell.digitIndex,
       });
-    } else if (autoFill) {
+    } else if (presentationMode) {
+      // Demo mode: decorative preset art fills the numeral.
+      const preset = presetByCellId.get(cell.id);
+      if (preset) {
+        slots.push({
+          index: slots.length,
+          kind: 'preset',
+          position: { x: cell.x, y: cell.y, z: cell.z },
+          rotation: { x: cell.rotX, y: cell.rotY, z: cell.rotZ },
+          preset,
+          isHalo: false,
+          digitIndex: cell.digitIndex,
+        });
+      }
+    } else {
+      // Creator mode: cells no photo claimed keep the same birthday illustration
+      // cards used by the demo, so the numeral still looks designed. They are
+      // simply non-interactive and never highlighted as a target.
       const preset = presetByCellId.get(cell.id);
       if (preset) {
         slots.push({

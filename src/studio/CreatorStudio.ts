@@ -263,6 +263,7 @@ export class CreatorStudio {
   private draftSaveTimer: number | null = null;
   private configEmitTimer: number | null = null;
   private statusResetTimer: number | null = null;
+  private resetConfirmArmed = false;
 
   private batchDrawerOpen = false;
   private batchRawText = '';
@@ -525,7 +526,7 @@ export class CreatorStudio {
               class="studio-btn studio-btn-secondary studio-btn-sm studio-header-preview-btn"
               data-action="fullscreen-current"
             >全屏试看</button>
-            <button type="button" class="studio-ghost-btn" data-action="reset-draft">重置草稿</button>
+            <button type="button" class="studio-ghost-btn" data-action="reset-draft">${this.resetConfirmArmed ? '确认重置' : '重置草稿'}</button>
             <button type="button" class="studio-ghost-btn" data-action="exit-studio">退出</button>
           </div>
         </div>
@@ -1888,19 +1889,37 @@ export class CreatorStudio {
         this.options.onExitStudio();
         break;
       case 'reset-draft': {
-        const ok = window.confirm('确定清空当前草稿并恢复默认示例内容吗？');
-        if (!ok) return;
+        // Inline confirmation instead of window.confirm(): WeChat's WebView blocks
+        // native dialogs, which silently cancelled the reset and made the button
+        // look dead. A second tap on the same button confirms.
+        if (!this.resetConfirmArmed) {
+          this.resetConfirmArmed = true;
+          this.uploadFeedback = '再点一次「确认重置」即可清空草稿并恢复默认示例内容。';
+          this.uploadError = false;
+          this.render();
+          window.setTimeout(() => {
+            if (this.disposed || !this.resetConfirmArmed) return;
+            this.resetConfirmArmed = false;
+            this.uploadFeedback = '';
+            this.render();
+          }, 4000);
+          return;
+        }
+
+        this.resetConfirmArmed = false;
         await clearDraft();
         if (this.disposed) return;
         this.config = this.ensureConfigDefaults(cloneConfig(this.defaultConfig));
         this.selectedMemoryId = this.config.memories[0]?.id ?? null;
         this.draftStatus = 'idle';
-        this.uploadFeedback = '';
+        this.uploadFeedback = '草稿已重置。';
+        this.uploadError = false;
         this.publishError = '';
         this.publishedResult = null;
         this.posterDataUrl = null;
+        this.activeStep = 1;
         this.render();
-        this.emitConfigChange({ jumpToAct: this.getStepAct(this.activeStep) }, true);
+        this.emitConfigChange({ jumpToAct: 'AWAITING_OPEN' }, true);
         break;
       }
       case 'apply-rel-tpl': {
