@@ -4,5 +4,15 @@
   "installCommand": "npm install",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "nodeVersion": "22"
+  "nodeVersion": "22",
+  "routes": [
+    {
+      "source": "/c/*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/create",
+      "destination": "/index.html"
+    }
+  ]
 }
