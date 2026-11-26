@@ -32,6 +32,8 @@ interface CardEntry {
   backTex: THREE.CanvasTexture;
   sharesPresetTex: boolean;
   hasRealImage: boolean;
+  /** Decorative slot with no photo: never interactive, always dimmed identically. */
+  isFiller: boolean;
   homePos: THREE.Vector3;
   homeQuat: THREE.Quaternion;
   assemblyStart: THREE.Vector3;
@@ -1347,19 +1349,9 @@ export class MemoryCardDeck {
       opacity: 1,
     });
 
-    // Placeholder cards beyond the photo count are rendered as faint starlight
-    // so they read as background sparkle rather than content the viewer might
-    // try to interact with.
-    const isFiller = slot.kind !== 'memory' && slotArrIdx >= this.totalMemories && this.totalMemories > 0;
-    if (isFiller) {
-      bodyMat.opacity = 0.18;
-      bodyMat.emissiveIntensity = 0.08;
-      frontMat.color.setHex(0x6b6a66);
-      frontMat.opacity = 0.26;
-      backMat.opacity = 0.18;
-      frameMat.color.setHex(0x4a4844);
-      frameMat.opacity = 0.22;
-    }
+    // Remaining placeholders are decorative only: never clickable, always dimmed
+    // by the same fixed factor so they never outshine a real photo.
+    const isFiller = slot.kind !== 'memory';
 
     const bodyMesh = new THREE.Mesh(this.bodyGeo, bodyMat);
     root.add(bodyMesh);
@@ -1409,6 +1401,7 @@ export class MemoryCardDeck {
       backTex,
       sharesPresetTex,
       hasRealImage: false,
+      isFiller,
       homePos,
       homeQuat,
       assemblyStart: new THREE.Vector3(0, -this.layout.bounds.height * 0.6, 0),
@@ -1569,6 +1562,19 @@ export class MemoryCardDeck {
 
   private applyCardMaterials(entry: CardEntry, alpha: number): void {
     const a = clamp(alpha, 0, 1);
+
+    // Placeholder cards are effectively removed from the scene: fully invisible
+    // and non-interactive, so only the creator's photos remain on screen. They
+    // still exist as slots to keep indices (and pinned positions) stable.
+    if (entry.isFiller) {
+      entry.frontMat.opacity = 0;
+      entry.backMat.opacity = 0;
+      entry.bodyMat.opacity = 0;
+      entry.frameMat.opacity = 0;
+      entry.root.visible = false;
+      return;
+    }
+
     entry.frontMat.opacity = a;
     entry.backMat.opacity = a;
     entry.bodyMat.opacity = a;

@@ -687,13 +687,18 @@ export function buildAgeMosaicLayout(
 
   const totalDigitSlotsFull = baseCells.length;
 
-  // Placeholder cards stay in the grid (removing cells would break the numeral's
-  // silhouette and shift every slot index, which invalidates pinned positions).
-  // Instead the deck renders surplus placeholders as dim, non-interactive star
-  // dots. This flag drives that: any cell beyond the photo count is filler.
+  // ─── Placeholder budget ──────────────────────────────────────────────────
+  // Only photos are interactive. Placeholder cards beyond the photo count are
+  // kept in the grid (so slot indices and pinned positions stay stable) but are
+  // flagged as `isPlaceholderOnly` and are removed from every interaction path
+  // and rendered uniformly dim in the deck.
+  const photoCount = safeMemories.length;
+  const placeholderSlotsAllowed = photoCount;
+
   const activeCells = baseCells;
   const keptIds = new Set(activeCells.map((cell) => cell.id));
   const activeCellsByDigit = cellsByDigit;
+
 
   const totalDigitSlots = activeCells.length;
   const rng = createSeededRng(
