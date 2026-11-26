@@ -1,4 +1,4 @@
-# 星海岁礼 · Starlight 3D Birthday Card
+# Starlight 3D Birthday Card
 
 由 **[St3venZ](https://github.com/St3venZ)** 原创设计与开发的纯白棉纸质感 **3D 交互式生日贺卡** 与 **实时分屏创作工坊**。
 
