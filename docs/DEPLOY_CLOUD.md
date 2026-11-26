@@ -62,8 +62,8 @@ Fork [https://github.com/St3venZ/starlight-birthday-card](https://github.com/St3
 如果你希望国内微信 / 手机浏览器秒开贺卡、完全无需 VPN，可直接将同一个 GitHub 仓库同步关联到 **腾讯云 EdgeOne Pages**！项目已内置边缘代理函数 [edge-functions/api/cards/[[default]].js](../edge-functions/api/cards/%5B%5Bdefault%5D%5D.js)，部署即自动激活：
 
 1. **导入仓库**：登录腾讯云 **EdgeOne Pages** 控制台，选择导入 GitHub 仓库 `https://github.com/St3venZ/starlight-birthday-card`（或你的 Fork），构建命令填 `npm run build`、输出目录填 `dist`；EdgeOne 会自动识别 `edge-functions/api/cards/[[default]].js` 边缘函数；
-2. **配置上游环境变量（可选）**：若你的 Cloudflare Pages 域名不是默认的 `https://starlight-birthday-card.pages.dev`，在 EdgeOne Pages 项目设置 -> **环境变量** 中新增：
-   - `UPSTREAM_API_ORIGIN` = `https://你的项目.pages.dev`（不要带末尾 `/`）
+2. **配置上游环境变量（已预设默认值，开箱免填）**：项目已默认将上游指向预部署好的云端接口 `https://starlight-cards-api.st3venz-cards.workers.dev`；如果你自行部署了新的 Cloudflare Pages / Worker 地址，可在 EdgeOne Pages 项目设置 -> **环境变量** 中新增：
+   - `UPSTREAM_API_ORIGIN` = `https://你的云端接口域名`（不要带末尾 `/`）
 3. **保存部署并直接使用 EdgeOne 域名分享**：
    - EdgeOne 节点会把 `/api/cards/*` 请求在服务端直接透传至 Cloudflare KV/R2，并自动把生成的分享短链域名替换为你的 EdgeOne 域名；
    - 国内微信扫码或点击短链全程仅访问 EdgeOne 国内加速节点，**零 VPN、零浏览器跨域报错、照片与 3D 场景秒开**！

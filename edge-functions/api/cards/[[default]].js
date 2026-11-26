@@ -6,10 +6,10 @@
  * with ZERO VPN and ZERO browser CORS errors.
  *
  * Environment variable (optional, configured in EdgeOne Pages Console):
- *   UPSTREAM_API_ORIGIN = "https://starlight-birthday-card.pages.dev"
+ *   UPSTREAM_API_ORIGIN = "https://starlight-cards-api.st3venz-cards.workers.dev"
  */
 
-const DEFAULT_UPSTREAM_ORIGIN = 'https://starlight-birthday-card.pages.dev';
+const DEFAULT_UPSTREAM_ORIGIN = 'https://starlight-cards-api.st3venz-cards.workers.dev';
 
 const FORWARD_REQUEST_HEADERS = [
   'accept',
