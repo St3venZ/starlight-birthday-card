@@ -351,6 +351,9 @@ function resolveDensityMode(
   if (densityMode === 'compact' || densityMode === 'standard' || densityMode === 'deluxe') {
     return densityMode;
   }
+  // Tiering targets roughly one card slot per uploaded photo: compact holds
+  // ~18, standard ~28, deluxe ~38 slots. Staying on the smallest workable grid
+  // is what keeps filler cards from outnumbering real photos.
   if (photoCount <= 8 || ageText.length >= 3) {
     return 'compact';
   }

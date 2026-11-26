@@ -2421,9 +2421,14 @@ export class CreatorStudio {
     this.uploadBusy = false;
     if (imported > 0) {
       this.selectedMemoryId = firstAddedId ?? this.selectedMemoryId;
+
+      // Uploaded photos take over card slots automatically: the layout assigns
+      // real memories to digit cells before any filler preset is placed, so one
+      // repeated filler card disappears for each photo added. No manual removal
+      // of placeholder cards is required.
       const limitNote =
         trimmedCount > 0 ? `（已达 ${MAX_PHOTOS} 张上限，忽略其余 ${trimmedCount} 张）` : '';
-      this.uploadFeedback = `已导入 ${imported} 张照片（压缩后共 ${formatFileSize(totalBytes)}）${limitNote}`;
+      this.uploadFeedback = `已导入 ${imported} 张照片，系统占位卡已自动减少 ${imported} 个（压缩后共 ${formatFileSize(totalBytes)}）${limitNote}`;
       this.uploadError = false;
       this.scheduleDraftSave();
       this.emitConfigChange({ jumpToAct: 'MEMORY_EXPLORE' }, true);
