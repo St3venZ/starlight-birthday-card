@@ -13,3 +13,9 @@ yarn-debug.log*
 pnpm-debug.log*
 coverage/
 .vite/
+
+# EdgeOne CLI build cache
+.edgeone/
+edgeone.schema.json
+.vscode/
+*.zip
