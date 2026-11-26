@@ -351,9 +351,6 @@ function resolveDensityMode(
   if (densityMode === 'compact' || densityMode === 'standard' || densityMode === 'deluxe') {
     return densityMode;
   }
-  // Tiering targets roughly one card slot per uploaded photo: compact holds
-  // ~18, standard ~28, deluxe ~38 slots. Staying on the smallest workable grid
-  // is what keeps filler cards from outnumbering real photos.
   if (photoCount <= 8 || ageText.length >= 3) {
     return 'compact';
   }
@@ -393,82 +390,6 @@ export function getDigitSlotCount(
   }
 
   return { densityUsed, totalDigitSlots };
-}
-
-/**
- * Caps the number of placeholder (decorative) cards at the photo count.
- *
- * Placeholders are purely visual: they have no click target and are excluded
- * from the guiding filament. When a creator uploads fewer photos than the
- * numeral has cells, this removes surplus *cells* from the outside in so the
- * remaining filler count never exceeds the real photo count.
- *
- * Cells already claimed by a real photo (including `pinnedSlotIndex` locks) are
- * never removed — they are passed in via `protectedIds`.
- *
- * @returns the kept cells, or the original list when no trim is needed.
- */
-function trimPlaceholderBudget(
-  cells: BaseCell[],
-  placeholderBudget: number,
-  cellsByDigit: BaseCell[][],
-  seed: number,
-  protectedIds: Set<number>,
-): BaseCell[] {
-  if (placeholderBudget <= 0 || cells.length === 0) return cells;
-
-  // Cells that must survive so the numeral still reads as a numeral: roughly one
-  // per row of each digit, chosen from the digit's own extent.
-  const mandatory = new Set<number>(protectedIds);
-  for (const digitCells of cellsByDigit) {
-    if (digitCells.length === 0) continue;
-    const rows = new Set(digitCells.map((c) => c.row));
-    for (const row of rows) {
-      const inRow = digitCells.filter((c) => c.row === row);
-      // Keep the middle-most cell of each row to preserve the stroke skeleton.
-      const mid = inRow.reduce(
-        (best, c) =>
-          Math.abs(c.col - (inRow.reduce((s, x) => s + x.col, 0) / inRow.length)) <
-          Math.abs(best.col - (inRow.reduce((s, x) => s + x.col, 0) / inRow.length))
-            ? c
-            : best,
-        inRow[0],
-      );
-      mandatory.add(mid.id);
-    }
-  }
-
-  // Rank the expendable cells: outer edges of a digit are least important.
-  const centroidByDigit = cellsByDigit.map((list) => {
-    if (list.length === 0) return { row: 0, col: 0 };
-    const sum = list.reduce(
-      (acc, c) => ({ row: acc.row + c.row, col: acc.col + c.col }),
-      { row: 0, col: 0 },
-    );
-    return { row: sum.row / list.length, col: sum.col / list.length };
-  });
-
-  const ranked = cells
-    .filter((cell) => !mandatory.has(cell.id))
-    .map((cell) => {
-      const centre = centroidByDigit[cell.digitIndex] ?? { row: 0, col: 0 };
-      const dr = cell.row - centre.row;
-      const dc = cell.col - centre.col;
-      const radial = Math.sqrt(dr * dr + dc * dc);
-      const noise = seededCellNoise(seed ^ 0x51ed, cell.digitIndex, cell.row, cell.col);
-      return { cell, score: radial + noise * 0.35 };
-    })
-    .sort((a, b) => b.score - a.score);
-
-  // Keep the per-row skeleton cells, plus enough cells to host every photo, plus
-  // at most `placeholderBudget` decorative cells. Any further cell is dropped.
-  const removableCount = Math.max(0, ranked.length - placeholderBudget);
-  const removed = new Set<number>();
-  for (let i = 0; i < removableCount && i < ranked.length; i += 1) {
-    removed.add(ranked[i].cell.id);
-  }
-
-  return cells.filter((cell) => !removed.has(cell.id));
 }
 
 /**
@@ -685,23 +606,7 @@ export function buildAgeMosaicLayout(
     cursorCol += gWidth + metrics.digitGapCols;
   });
 
-  const totalDigitSlotsFull = baseCells.length;
-
-  // ─── Two rendering modes ────────────────────────────────────────────────
-  // Presentation mode (bundled demo, zero creator photos): the numeral is filled
-  // with decorative preset cards, which is what the showcase animation needs.
-  // Creator mode (at least one uploaded photo): only real photos become cards.
-  // Every remaining cell stays as an inert dark backing tile with no artwork and
-  // no interaction, so filler art never competes with the creator's photos.
-  const photoCount = safeMemories.length;
-  const presentationMode = photoCount === 0;
-
-  const activeCells = baseCells;
-  const keptIds = new Set(activeCells.map((cell) => cell.id));
-  const activeCellsByDigit = cellsByDigit;
-
-
-  const totalDigitSlots = activeCells.length;
+  const totalDigitSlots = baseCells.length;
   const rng = createSeededRng(
     (resolvedSeed ^ Math.imul(safeAge + 1, 2654435761) ^ Math.imul(totalDigitSlots + 3, 2246822519)) >>>
       0
@@ -723,19 +628,14 @@ export function buildAgeMosaicLayout(
     ) {
       assignedMemoryByCellId.set(pin, memory);
       const cell = baseCells[pin];
-      if (cell && keptIds.has(cell.id)) {
-        pinnedCellsByDigit[cell.digitIndex].push(cell);
-      } else {
-        // The pinned cell was trimmed away; fall back to unpinned placement.
-        unpinnedMemories.push(memory);
-      }
+      pinnedCellsByDigit[cell.digitIndex].push(cell);
     } else {
       unpinnedMemories.push(memory);
     }
   }
 
   // 4. 分层按数字位自由槽位比例分配未锁定回忆配额，避免任何一位数字空洞
-  const freeCellsByDigit = activeCellsByDigit.map((cells) =>
+  const freeCellsByDigit = cellsByDigit.map((cells) =>
     cells.filter((cell) => !assignedMemoryByCellId.has(cell.id))
   );
   const totalFreeDigitSlots = freeCellsByDigit.reduce((acc, list) => acc + list.length, 0);
@@ -812,7 +712,7 @@ export function buildAgeMosaicLayout(
   });
 
   // 为全部位于数字层内的回忆统一编排 memoryOrder（从左到右、从上到下流畅游览）
-  const allDigitMemoryCells = activeCells
+  const allDigitMemoryCells = baseCells
     .filter((cell) => assignedMemoryByCellId.has(cell.id))
     .sort((a, b) => {
       if (Math.abs(a.globalCol - b.globalCol) > 1e-4) {
@@ -849,11 +749,11 @@ export function buildAgeMosaicLayout(
     }
 
     const cellLookup = new Map<string, BaseCell>();
-    for (const cell of activeCells) {
+    for (const cell of baseCells) {
       cellLookup.set(`${cell.digitIndex}:${cell.row}:${cell.col}`, cell);
     }
 
-    const emptyCells = activeCells.filter((cell) => !assignedMemoryByCellId.has(cell.id));
+    const emptyCells = baseCells.filter((cell) => !assignedMemoryByCellId.has(cell.id));
     let lastAssignedId: string | null = null;
 
     for (const cell of emptyCells) {
@@ -900,7 +800,7 @@ export function buildAgeMosaicLayout(
   // 7. 组装基础数字层槽位
   const slots: MosaicSlot[] = [];
 
-  for (const cell of activeCells) {
+  for (const cell of baseCells) {
     const mem = assignedMemoryByCellId.get(cell.id);
     if (mem !== undefined) {
       slots.push({
@@ -913,24 +813,7 @@ export function buildAgeMosaicLayout(
         isHalo: false,
         digitIndex: cell.digitIndex,
       });
-    } else if (presentationMode) {
-      // Demo mode: decorative preset art fills the numeral.
-      const preset = presetByCellId.get(cell.id);
-      if (preset) {
-        slots.push({
-          index: slots.length,
-          kind: 'preset',
-          position: { x: cell.x, y: cell.y, z: cell.z },
-          rotation: { x: cell.rotX, y: cell.rotY, z: cell.rotZ },
-          preset,
-          isHalo: false,
-          digitIndex: cell.digitIndex,
-        });
-      }
-    } else {
-      // Creator mode: cells no photo claimed keep the same birthday illustration
-      // cards used by the demo, so the numeral still looks designed. They are
-      // simply non-interactive and never highlighted as a target.
+    } else if (autoFill) {
       const preset = presetByCellId.get(cell.id);
       if (preset) {
         slots.push({

@@ -263,7 +263,6 @@ export class CreatorStudio {
   private draftSaveTimer: number | null = null;
   private configEmitTimer: number | null = null;
   private statusResetTimer: number | null = null;
-  private resetConfirmArmed = false;
 
   private batchDrawerOpen = false;
   private batchRawText = '';
@@ -292,18 +291,8 @@ export class CreatorStudio {
 
   constructor(options: CreatorStudioOptions) {
     this.options = options;
-    // The homepage ships with six demo memories that have no real image file
-    // (`image: ''`), so the renderer draws procedural seaside artwork for them.
-    // Those are showcase content, not the creator's own memories: carrying them
-    // into the Studio made freshly uploaded photos appear to sit alongside
-    // unrelated "sunset" cards. Start the Studio from an empty library instead.
-    const studioBase = cloneConfig(options.initialConfig);
-    studioBase.memories = studioBase.memories.filter(
-      (memory) => typeof memory.image === 'string' && memory.image.trim().length > 0,
-    );
-
-    this.defaultConfig = cloneConfig(studioBase);
-    this.config = this.ensureConfigDefaults(cloneConfig(studioBase));
+    this.defaultConfig = cloneConfig(options.initialConfig);
+    this.config = this.ensureConfigDefaults(cloneConfig(options.initialConfig));
     this.selectedMemoryId = this.config.memories[0]?.id ?? null;
 
     this.rootEl = document.createElement('div');
@@ -375,14 +364,7 @@ export class CreatorStudio {
     this.cloudConfigured = cloudReady;
 
     if (savedDraft) {
-      // Older drafts were saved before demo memories were excluded, so they can
-      // still contain the six procedural seaside placeholders. Drop them on load
-      // too, otherwise the same confusion comes back for returning creators.
-      const restored = cloneConfig(savedDraft);
-      restored.memories = restored.memories.filter(
-        (memory) => typeof memory.image === 'string' && memory.image.trim().length > 0,
-      );
-      this.config = this.ensureConfigDefaults(restored);
+      this.config = this.ensureConfigDefaults(cloneConfig(savedDraft));
       this.selectedMemoryId = this.config.memories[0]?.id ?? null;
       this.draftStatus = 'restored';
       this.emitConfigChange({ jumpToAct: 'AWAITING_OPEN' }, true);
@@ -543,7 +525,7 @@ export class CreatorStudio {
               class="studio-btn studio-btn-secondary studio-btn-sm studio-header-preview-btn"
               data-action="fullscreen-current"
             >全屏试看</button>
-            <button type="button" class="studio-ghost-btn" data-action="reset-draft">${this.resetConfirmArmed ? '确认重置' : '重置草稿'}</button>
+            <button type="button" class="studio-ghost-btn" data-action="reset-draft">重置草稿</button>
             <button type="button" class="studio-ghost-btn" data-action="exit-studio">退出</button>
           </div>
         </div>
@@ -1906,37 +1888,19 @@ export class CreatorStudio {
         this.options.onExitStudio();
         break;
       case 'reset-draft': {
-        // Inline confirmation instead of window.confirm(): WeChat's WebView blocks
-        // native dialogs, which silently cancelled the reset and made the button
-        // look dead. A second tap on the same button confirms.
-        if (!this.resetConfirmArmed) {
-          this.resetConfirmArmed = true;
-          this.uploadFeedback = '再点一次「确认重置」即可清空草稿并恢复默认示例内容。';
-          this.uploadError = false;
-          this.render();
-          window.setTimeout(() => {
-            if (this.disposed || !this.resetConfirmArmed) return;
-            this.resetConfirmArmed = false;
-            this.uploadFeedback = '';
-            this.render();
-          }, 4000);
-          return;
-        }
-
-        this.resetConfirmArmed = false;
+        const ok = window.confirm('确定清空当前草稿并恢复默认示例内容吗？');
+        if (!ok) return;
         await clearDraft();
         if (this.disposed) return;
         this.config = this.ensureConfigDefaults(cloneConfig(this.defaultConfig));
         this.selectedMemoryId = this.config.memories[0]?.id ?? null;
         this.draftStatus = 'idle';
-        this.uploadFeedback = '草稿已重置。';
-        this.uploadError = false;
+        this.uploadFeedback = '';
         this.publishError = '';
         this.publishedResult = null;
         this.posterDataUrl = null;
-        this.activeStep = 1;
         this.render();
-        this.emitConfigChange({ jumpToAct: 'AWAITING_OPEN' }, true);
+        this.emitConfigChange({ jumpToAct: this.getStepAct(this.activeStep) }, true);
         break;
       }
       case 'apply-rel-tpl': {
@@ -2457,14 +2421,9 @@ export class CreatorStudio {
     this.uploadBusy = false;
     if (imported > 0) {
       this.selectedMemoryId = firstAddedId ?? this.selectedMemoryId;
-
-      // Uploaded photos take over card slots automatically: the layout assigns
-      // real memories to digit cells before any filler preset is placed, so one
-      // repeated filler card disappears for each photo added. No manual removal
-      // of placeholder cards is required.
       const limitNote =
         trimmedCount > 0 ? `（已达 ${MAX_PHOTOS} 张上限，忽略其余 ${trimmedCount} 张）` : '';
-      this.uploadFeedback = `已导入 ${imported} 张照片，系统占位卡已自动减少 ${imported} 个（压缩后共 ${formatFileSize(totalBytes)}）${limitNote}`;
+      this.uploadFeedback = `已导入 ${imported} 张照片（压缩后共 ${formatFileSize(totalBytes)}）${limitNote}`;
       this.uploadError = false;
       this.scheduleDraftSave();
       this.emitConfigChange({ jumpToAct: 'MEMORY_EXPLORE' }, true);

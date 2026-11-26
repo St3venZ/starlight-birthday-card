@@ -32,8 +32,6 @@ interface CardEntry {
   backTex: THREE.CanvasTexture;
   sharesPresetTex: boolean;
   hasRealImage: boolean;
-  /** Decorative slot with no photo: never interactive, always dimmed identically. */
-  isFiller: boolean;
   homePos: THREE.Vector3;
   homeQuat: THREE.Quaternion;
   assemblyStart: THREE.Vector3;
@@ -1343,10 +1341,6 @@ export class MemoryCardDeck {
       opacity: 1,
     });
 
-    // Remaining placeholders are decorative only: never clickable, always dimmed
-    // by the same fixed factor so they never outshine a real photo.
-    const isFiller = slot.kind !== 'memory';
-
     const bodyMesh = new THREE.Mesh(this.bodyGeo, bodyMat);
     root.add(bodyMesh);
 
@@ -1391,7 +1385,6 @@ export class MemoryCardDeck {
       backTex,
       sharesPresetTex,
       hasRealImage: false,
-      isFiller,
       homePos,
       homeQuat,
       assemblyStart: new THREE.Vector3(0, -this.layout.bounds.height * 0.6, 0),
@@ -1552,10 +1545,6 @@ export class MemoryCardDeck {
 
   private applyCardMaterials(entry: CardEntry, alpha: number): void {
     const a = clamp(alpha, 0, 1);
-
-    // Placeholder cards keep their normal birthday-illustration appearance and
-    // full brightness; they are only excluded from the guiding filament and the
-    // "next memory" path. No special dimming is applied.
     entry.frontMat.opacity = a;
     entry.backMat.opacity = a;
     entry.bodyMat.opacity = a;
