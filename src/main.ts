@@ -15,6 +15,43 @@ type AppRoute =
   | { kind: 'create' }
   | { kind: 'share'; shortId: string };
 
+/**
+ * Resolves the directory the app is served from, e.g. `/` for a root domain or
+ * `/starlight-birthday-card/` for a GitHub Pages project site.
+ *
+ * Derived from the bundle's own URL rather than hardcoded, so the same build
+ * works when hosted at the domain root, in a repository subpath, or portably
+ * via `file:`. Without this, a project site sees
+ * `/starlight-birthday-card/create` and fails to match `/create`, silently
+ * rendering the landing page instead of the Studio.
+ */
+function computeBasePath(): string {
+  try {
+    const modulePath = new URL(import.meta.url).pathname;
+    const base = modulePath.replace(/\/assets\/[^/]+$/, '/');
+    return base.endsWith('/') ? base : `${base}/`;
+  } catch {
+    return '/';
+  }
+}
+
+const BASE_PATH = computeBasePath();
+
+/** Normalizes `location.pathname` to a base-relative route like `/create`. */
+function getRelativePath(): string {
+  let pathname = window.location.pathname;
+  if (BASE_PATH !== '/' && pathname.startsWith(BASE_PATH)) {
+    pathname = pathname.slice(BASE_PATH.length - 1);
+  }
+  return pathname.replace(/\/+$/, '') || '/';
+}
+
+/** Prefixes an app route with the hosting base, e.g. `/create` -> `/repo/create`. */
+function withBase(routePath: string): string {
+  if (BASE_PATH === '/') return routePath;
+  return `${BASE_PATH.replace(/\/$/, '')}${routePath}`;
+}
+
 function parseRoute(): AppRoute {
   const hash = window.location.hash.replace(/^#/, '').trim();
   if (hash === '/create' || hash === '/create/') {
@@ -25,7 +62,7 @@ function parseRoute(): AppRoute {
     return { kind: 'share', shortId: decodeURIComponent(hashShareMatch[1]) };
   }
 
-  const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+  const pathname = getRelativePath();
   if (pathname === '/create') {
     return { kind: 'create' };
   }
@@ -40,7 +77,7 @@ function parseRoute(): AppRoute {
 function shouldUseHashNavigation(): boolean {
   if (window.location.protocol === 'file:') return true;
   if (window.location.hash.startsWith('#/')) return true;
-  const pathname = window.location.pathname.replace(/\/index\.html$/, '');
+  const pathname = getRelativePath().replace(/\/index\.html$/, '');
   const isRootHosted =
     pathname === '' ||
     pathname === '/' ||
@@ -131,8 +168,13 @@ function bootstrap(): void {
       window.location.hash = `#${targetPath}`;
       return;
     }
-    if (window.location.pathname !== targetPath || window.location.search) {
-      window.history.pushState({}, '', targetPath);
+
+    // `targetPath` is app-relative (`/create`), but the browser needs the full
+    // hosted path (`/starlight-birthday-card/create`). Without the base, a
+    // project-site deployment would navigate above its own scope and 404.
+    const nextPath = withBase(targetPath);
+    if (window.location.pathname !== nextPath || window.location.search) {
+      window.history.pushState({}, '', nextPath);
       void renderCurrentRoute();
     }
   };
