@@ -787,8 +787,14 @@ export class MemoryCardDeck {
     }
 
     const hits = raycaster.intersectObjects(this.hitMeshes, false);
-    if (hits.length === 0) return null;
-    const slotIndex = hits[0].object.userData.slotIndex as number | undefined;
+    // Placeholder cards are decorative: skip them so only real photos respond.
+    const hit = hits.find((h) => {
+      const idx = h.object.userData.slotIndex as number | undefined;
+      if (idx === undefined) return false;
+      return this.entryBySlotIndex.get(idx)?.slot.kind === 'memory';
+    });
+    if (!hit) return null;
+    const slotIndex = hit.object.userData.slotIndex as number | undefined;
     if (slotIndex === undefined) return null;
     return this.entryBySlotIndex.get(slotIndex)?.slot ?? null;
   }
@@ -1341,6 +1347,20 @@ export class MemoryCardDeck {
       opacity: 1,
     });
 
+    // Placeholder cards beyond the photo count are rendered as faint starlight
+    // so they read as background sparkle rather than content the viewer might
+    // try to interact with.
+    const isFiller = slot.kind !== 'memory' && slotArrIdx >= this.totalMemories && this.totalMemories > 0;
+    if (isFiller) {
+      bodyMat.opacity = 0.18;
+      bodyMat.emissiveIntensity = 0.08;
+      frontMat.color.setHex(0x6b6a66);
+      frontMat.opacity = 0.26;
+      backMat.opacity = 0.18;
+      frameMat.color.setHex(0x4a4844);
+      frameMat.opacity = 0.22;
+    }
+
     const bodyMesh = new THREE.Mesh(this.bodyGeo, bodyMat);
     root.add(bodyMesh);
 
@@ -1358,8 +1378,12 @@ export class MemoryCardDeck {
 
     const hitMesh = new THREE.Mesh(this.hitGeo, this.hitMat);
     hitMesh.userData.slotIndex = slot.index;
-    root.add(hitMesh);
-    this.hitMeshes.push(hitMesh);
+    // Filler slots beyond the photo count are decorative: no click target at all,
+    // so they cannot be focused, flipped or lit.
+    if (slot.kind === 'memory') {
+      root.add(hitMesh);
+      this.hitMeshes.push(hitMesh);
+    }
 
     const homePos = new THREE.Vector3(slot.position.x, slot.position.y, slot.position.z);
     const homeQuat = new THREE.Quaternion().setFromEuler(

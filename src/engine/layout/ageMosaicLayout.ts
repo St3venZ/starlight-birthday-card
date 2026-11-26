@@ -396,6 +396,82 @@ export function getDigitSlotCount(
 }
 
 /**
+ * Caps the number of placeholder (decorative) cards at the photo count.
+ *
+ * Placeholders are purely visual: they have no click target and are excluded
+ * from the guiding filament. When a creator uploads fewer photos than the
+ * numeral has cells, this removes surplus *cells* from the outside in so the
+ * remaining filler count never exceeds the real photo count.
+ *
+ * Cells already claimed by a real photo (including `pinnedSlotIndex` locks) are
+ * never removed — they are passed in via `protectedIds`.
+ *
+ * @returns the kept cells, or the original list when no trim is needed.
+ */
+function trimPlaceholderBudget(
+  cells: BaseCell[],
+  placeholderBudget: number,
+  cellsByDigit: BaseCell[][],
+  seed: number,
+  protectedIds: Set<number>,
+): BaseCell[] {
+  if (placeholderBudget <= 0 || cells.length === 0) return cells;
+
+  // Cells that must survive so the numeral still reads as a numeral: roughly one
+  // per row of each digit, chosen from the digit's own extent.
+  const mandatory = new Set<number>(protectedIds);
+  for (const digitCells of cellsByDigit) {
+    if (digitCells.length === 0) continue;
+    const rows = new Set(digitCells.map((c) => c.row));
+    for (const row of rows) {
+      const inRow = digitCells.filter((c) => c.row === row);
+      // Keep the middle-most cell of each row to preserve the stroke skeleton.
+      const mid = inRow.reduce(
+        (best, c) =>
+          Math.abs(c.col - (inRow.reduce((s, x) => s + x.col, 0) / inRow.length)) <
+          Math.abs(best.col - (inRow.reduce((s, x) => s + x.col, 0) / inRow.length))
+            ? c
+            : best,
+        inRow[0],
+      );
+      mandatory.add(mid.id);
+    }
+  }
+
+  // Rank the expendable cells: outer edges of a digit are least important.
+  const centroidByDigit = cellsByDigit.map((list) => {
+    if (list.length === 0) return { row: 0, col: 0 };
+    const sum = list.reduce(
+      (acc, c) => ({ row: acc.row + c.row, col: acc.col + c.col }),
+      { row: 0, col: 0 },
+    );
+    return { row: sum.row / list.length, col: sum.col / list.length };
+  });
+
+  const ranked = cells
+    .filter((cell) => !mandatory.has(cell.id))
+    .map((cell) => {
+      const centre = centroidByDigit[cell.digitIndex] ?? { row: 0, col: 0 };
+      const dr = cell.row - centre.row;
+      const dc = cell.col - centre.col;
+      const radial = Math.sqrt(dr * dr + dc * dc);
+      const noise = seededCellNoise(seed ^ 0x51ed, cell.digitIndex, cell.row, cell.col);
+      return { cell, score: radial + noise * 0.35 };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  // Keep the per-row skeleton cells, plus enough cells to host every photo, plus
+  // at most `placeholderBudget` decorative cells. Any further cell is dropped.
+  const removableCount = Math.max(0, ranked.length - placeholderBudget);
+  const removed = new Set<number>();
+  for (let i = 0; i < removableCount && i < ranked.length; i += 1) {
+    removed.add(ranked[i].cell.id);
+  }
+
+  return cells.filter((cell) => !removed.has(cell.id));
+}
+
+/**
  * 确定性单元格种子微扰（[-1, 1]），随 layoutSeed 自然变化且 100% 可复现。
  */
 function seededCellNoise(seed: number, a: number, b: number, c: number): number {
@@ -609,7 +685,19 @@ export function buildAgeMosaicLayout(
     cursorCol += gWidth + metrics.digitGapCols;
   });
 
-  const totalDigitSlots = baseCells.length;
+  const totalDigitSlotsFull = baseCells.length;
+
+  // Placeholder cards stay in the grid (removing cells would break the numeral's
+  // silhouette and shift every slot index, which invalidates pinned positions).
+  // Instead the deck renders surplus placeholders as dim, non-interactive star
+  // dots. This flag drives that: any cell beyond the photo count is filler.
+  const placeholderLimit = safeMemories.length;
+
+  const activeCells = baseCells;
+  const keptIds = new Set(activeCells.map((cell) => cell.id));
+  const activeCellsByDigit = cellsByDigit;
+
+  const totalDigitSlots = activeCells.length;
   const rng = createSeededRng(
     (resolvedSeed ^ Math.imul(safeAge + 1, 2654435761) ^ Math.imul(totalDigitSlots + 3, 2246822519)) >>>
       0
@@ -631,14 +719,19 @@ export function buildAgeMosaicLayout(
     ) {
       assignedMemoryByCellId.set(pin, memory);
       const cell = baseCells[pin];
-      pinnedCellsByDigit[cell.digitIndex].push(cell);
+      if (cell && keptIds.has(cell.id)) {
+        pinnedCellsByDigit[cell.digitIndex].push(cell);
+      } else {
+        // The pinned cell was trimmed away; fall back to unpinned placement.
+        unpinnedMemories.push(memory);
+      }
     } else {
       unpinnedMemories.push(memory);
     }
   }
 
   // 4. 分层按数字位自由槽位比例分配未锁定回忆配额，避免任何一位数字空洞
-  const freeCellsByDigit = cellsByDigit.map((cells) =>
+  const freeCellsByDigit = activeCellsByDigit.map((cells) =>
     cells.filter((cell) => !assignedMemoryByCellId.has(cell.id))
   );
   const totalFreeDigitSlots = freeCellsByDigit.reduce((acc, list) => acc + list.length, 0);
@@ -715,7 +808,7 @@ export function buildAgeMosaicLayout(
   });
 
   // 为全部位于数字层内的回忆统一编排 memoryOrder（从左到右、从上到下流畅游览）
-  const allDigitMemoryCells = baseCells
+  const allDigitMemoryCells = activeCells
     .filter((cell) => assignedMemoryByCellId.has(cell.id))
     .sort((a, b) => {
       if (Math.abs(a.globalCol - b.globalCol) > 1e-4) {
@@ -752,11 +845,11 @@ export function buildAgeMosaicLayout(
     }
 
     const cellLookup = new Map<string, BaseCell>();
-    for (const cell of baseCells) {
+    for (const cell of activeCells) {
       cellLookup.set(`${cell.digitIndex}:${cell.row}:${cell.col}`, cell);
     }
 
-    const emptyCells = baseCells.filter((cell) => !assignedMemoryByCellId.has(cell.id));
+    const emptyCells = activeCells.filter((cell) => !assignedMemoryByCellId.has(cell.id));
     let lastAssignedId: string | null = null;
 
     for (const cell of emptyCells) {
@@ -803,7 +896,7 @@ export function buildAgeMosaicLayout(
   // 7. 组装基础数字层槽位
   const slots: MosaicSlot[] = [];
 
-  for (const cell of baseCells) {
+  for (const cell of activeCells) {
     const mem = assignedMemoryByCellId.get(cell.id);
     if (mem !== undefined) {
       slots.push({
