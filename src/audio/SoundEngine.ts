@@ -451,17 +451,17 @@ export class SoundEngine {
 
     this.applyGainTargets();
 
-    if (this.customAudio) {
-      if (muted) {
+    if (muted) {
+      if (this.customAudio) {
         this.fadeCustomAudioTo(0, 260, true);
-      } else if (this.useCustomBgm()) {
-        void this.tryStartCustomAudio().then((ok) => {
-          if (!this.disposed && ok) {
-            this.playing = true;
-          }
-          this.notifyStateChange();
-        });
       }
+    } else if (this.useCustomBgm()) {
+      void this.tryStartCustomAudio().then((ok) => {
+        if (!this.disposed && ok) {
+          this.playing = true;
+        }
+        this.notifyStateChange();
+      });
     }
     this.notifyStateChange();
   }
@@ -1099,15 +1099,25 @@ export class SoundEngine {
     return buffer;
   }
 
-  private async tryStartCustomAudio(): Promise<boolean> {
+  private tryStartCustomAudio(): Promise<boolean> {
     const url = this.config.customBgmUrl.trim();
-    if (!url || this.customFailed) return false;
+    if (!url || this.customFailed) return Promise.resolve(false);
 
     if (!this.customAudio) {
       const audio = new Audio(url);
       audio.loop = true;
       audio.preload = 'auto';
       audio.volume = 0;
+      audio.addEventListener('play', () => {
+        if (this.disposed) return;
+        this.playing = true;
+        this.applyGainTargets();
+        this.notifyStateChange();
+      });
+      audio.addEventListener('pause', () => {
+        if (this.disposed) return;
+        this.notifyStateChange();
+      });
       audio.addEventListener('error', () => {
         this.customFailed = true;
         this.customAudio = null;
@@ -1115,17 +1125,34 @@ export class SoundEngine {
           this.startProceduralBgm();
           this.playing = true;
         }
+        this.notifyStateChange();
       });
       this.customAudio = audio;
     }
 
+    const audio = this.customAudio;
+    let playPromise: Promise<void> | undefined;
     try {
-      await this.customAudio.play();
-      this.fadeCustomAudioTo(this.muted ? 0 : this.baseVolume, 950, false);
-      return true;
+      // Invoke play() synchronously inside the user gesture before any await
+      // so iOS Safari and WeChat WKWebView unlock custom MP3 playback on first tap.
+      playPromise = audio.play();
     } catch {
-      return false;
+      return Promise.resolve(false);
     }
+
+    const onStarted = (): boolean => {
+      if (this.disposed) return false;
+      this.playing = true;
+      this.applyGainTargets();
+      this.fadeCustomAudioTo(this.muted ? 0 : this.baseVolume, 950, false);
+      this.notifyStateChange();
+      return true;
+    };
+
+    if (playPromise && typeof playPromise.then === 'function') {
+      return playPromise.then(onStarted).catch(() => false);
+    }
+    return Promise.resolve(onStarted());
   }
 
   private fadeCustomAudioTo(targetVolume: number, durationMs: number, pauseWhenZero: boolean): void {

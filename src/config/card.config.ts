@@ -9,7 +9,7 @@ import type { BirthdayCardConfig } from './types';
  * 【如何替换成真实照片 / How to add your real photos】
  * 1. 将回忆照片放入 `public/photos/` 目录（如 `01.jpg`, `02.png`）；
  * 2. 将下方对应回忆的 `image` 改为 `'./photos/01.jpg'`；
- * 3. `image` 留空 `''` 时，系统会自动绘制 6 幅柔和的拍立得风景示例图。
+ * 3. `image` 留空 `''` 时，系统会自动绘制柔和的暖白插画示例图。
  *
  * 【如何填写照片说明与选择模板 / Photo captions & templates】
  * - `caption`: 点击查看照片时，直接显示在照片下方的简短说明（不填则自动使用 `message`）；
@@ -27,11 +27,11 @@ import type { BirthdayCardConfig } from './types';
  * 3. 留空 `''` 时，会自动演奏内置的 Web Audio 轻柔八音盒旋律。
  */
 export const cardConfig: BirthdayCardConfig = {
-  recipientName: '你',
-  senderName: '你的朋友',
-  age: 24,
-  birthdayDate: '2026.05.20',
-  coverSubtitle: '愿新的一岁，平安喜乐，万事顺意',
+  recipientName: 'Steven',
+  senderName: '一直陪伴你的朋友',
+  age: 22,
+  birthdayDate: '2026.11.26',
+  coverSubtitle: '愿二十二岁的星光，照亮你的每一个日常',
   densityMode: 'auto',
   layoutSeed: 20261126,
   shareSettings: {
@@ -40,10 +40,10 @@ export const cardConfig: BirthdayCardConfig = {
   },
 
   prologue: {
-    title: '生日快乐',
+    title: 'Steven，生日快乐',
     lines: [
-      '把过去一年里值得记住的几个瞬间，收进了这张小小的贺卡。',
-      '接下来它们会在夜空里拼出你的二十四岁，点击任意一张，可以看看当时的记录与背面留言。',
+      '把这一年里最舍不得忘记的五个日常瞬间，画进了这张纯白贺卡。',
+      '它们会在星夜里拼出你的二十二岁，点开任意一张，翻过背面看看写给你的悄悄话。',
     ],
     ctaLabel: '进入回忆相册',
   },
@@ -51,69 +51,58 @@ export const cardConfig: BirthdayCardConfig = {
   memories: [
     {
       id: 'memory-01',
-      image: '', // 示例 Example: './photos/01.jpg'
-      date: '2025.07.19',
-      title: '傍晚的海边',
+      image: './demo/01_seaside.jpg',
+      date: '2026.03.22',
+      title: '傍晚的海堤',
       template: 'polaroid',
-      caption: '那天晚霞很柔和，沿着海边散步的时候什么烦心事都忘了。',
+      caption: '晚风把海面吹成碎金，沿着堤岸慢慢走就忘了时间。',
       message:
-        '那天海风很舒服，太阳落下去前把天空染成了淡淡的橘色。我们顺着堤岸走了很长一段路，聊了不少日常小事，回头看这张照片依然觉得很轻松。',
+        'Steven，还记得那天沿着海堤走了好久，夕阳一点点沉进海里，风里都是咸咸的温柔。希望二十二岁的你，也能常常拥有这样不赶时间、吹着海风发呆的傍晚。',
       accentColor: '#D8A464',
     },
     {
       id: 'memory-02',
-      image: '', // 示例 Example: './photos/02.jpg'
-      date: '2025.09.04',
-      title: '山顶的夜空',
-      template: 'milestone',
-      caption: '凌晨两点云散开了，第一次在山脊上看到这么清晰的星空。',
+      image: './demo/02_cafe.jpg',
+      date: '2026.05.09',
+      title: '转角咖啡馆',
+      template: 'warm-note',
+      caption: '阳光斜斜落在木桌上，一杯拿铁聊掉一整个慵懒下午。',
       message:
-        '虽然夜里的山风有点凉，但等到云层散开的那一刻还是觉得非常值得。希望你往后的每一次出发，都能遇到这样清朗的好天气。',
-      accentColor: '#7B9CC8',
+        '和你待在街角小店里总觉得特别踏实，哪怕只是聊聊最近的小事、抢着分一块蛋糕，也能笑出声来。愿你往后的忙碌缝隙里，永远留着这样明媚松弛的午后。',
+      accentColor: '#C59B5F',
     },
     {
       id: 'memory-03',
-      image: '', // 示例 Example: './photos/03.jpg'
-      date: '2025.11.12',
-      title: '雨后的小巷',
-      template: 'warm-note',
-      caption: '刚下完雨的傍晚，街角小店亮着暖灯，一起喝了一碗热汤。',
-      message:
-        '秋雨刚停的时候路面还有点湿，路灯映在石板上暖暖的。那天在小馆里慢慢吃完晚饭，觉得这种普通又安稳的夜晚其实最难得。',
-      accentColor: '#C59B5F',
-    },
-    {
-      id: 'memory-04',
-      image: '', // 示例 Example: './photos/04.jpg'
-      date: '2026.01.28',
-      title: '冬夜的湖面',
+      image: './demo/03_sparkler.jpg',
+      date: '2026.08.15',
+      title: '夏夜仙女棒',
       template: 'editorial',
-      caption: '很安静的一个冬夜，湖面像镜子一样映着远处的微光。',
+      caption: '把夏夜滚烫的星火攥在手心，亮得像迷你银河。',
       message:
-        '那天晚上空气特别清冽，站在湖边没说太多话，只看着远处的天色一点点变亮。谢谢你总能注意到生活里这些安静又美好的瞬间。',
-      accentColor: '#7DB8A8',
-    },
-    {
-      id: 'memory-05',
-      image: '', // 示例 Example: './photos/05.jpg'
-      date: '2026.04.11',
-      title: '清晨的云海',
-      template: 'milestone',
-      caption: '天刚亮的时候雾气散开，远山在晨光里慢慢露了出来。',
-      message:
-        '早起虽然有点困，但看到第一缕阳光照在云层上时整个人都清醒了。愿你新的一岁也像这个清晨一样，视野开阔，脚步轻快。',
+        '夏末的河风吹着有点热，手里的仙女棒滋滋作响，映得你眼睛亮晶晶的。Steven，祝你二十二岁依然保有这份炽热与好奇，永远像那一晚的星火一样闪闪发光。',
       accentColor: '#D98C84',
     },
     {
-      id: 'memory-06',
-      image: '', // 示例 Example: './photos/06.jpg'
-      date: '2026.05.10',
-      title: '湖畔的灯影',
-      template: 'polaroid',
-      caption: '夏初的晚风很温柔，许下的小愿望希望都能慢慢实现。',
+      id: 'memory-04',
+      image: './demo/04_stargazing.jpg',
+      date: '2026.10.04',
+      title: '山坡看星星',
+      template: 'milestone',
+      caption: '铺开格子野餐垫，等一颗慢悠悠划过的流星。',
       message:
-        '夜色落下来之后，湖面上浮着点点暖光。不管你当时许了什么心愿，都祝它在二十四岁这一年里稳稳落地，每天都过得舒心自在。',
-      accentColor: '#C59B5F',
+        '秋夜的山坡有点凉，但捧着热饮看整片银河慢慢亮起来的时候，觉得世界一下子安静又辽阔。愿你新的一岁去往更远的远方时，抬头总能看见清朗璀璨的星光。',
+      accentColor: '#7B9CC8',
+    },
+    {
+      id: 'memory-05',
+      image: './demo/05_birthday_cake.jpg',
+      date: '2026.11.26',
+      title: '二十二岁的烛光',
+      template: 'polaroid',
+      caption: '暖黄串灯亮起来，在摇曳烛光前许下二十二岁的心愿。',
+      message:
+        'Steven，二十二岁生日快乐！把这一年里一起吹过的海风、聊过的午后、看过的星星都收进这张贺卡里。愿你许下的每个愿望都稳稳发芽，平安喜乐，永远被温柔和偏爱围绕。',
+      accentColor: '#D8A464',
     },
   ],
 
@@ -125,24 +114,24 @@ export const cardConfig: BirthdayCardConfig = {
   },
 
   finalBlessing: {
-    headline: '二十四岁生日快乐',
+    headline: '致二十二岁的 Steven',
     paragraphs: [
-      '祝你二十四岁生日快乐。刚刚点亮的那些照片，记录了过去一年里很多轻松、温暖、值得回味的时刻。',
-      '新的一岁不需要给自己太大压力。愿你每天都能睡个好觉，吃上合胃口的饭，忙起来时有条不紊，闲下来时能去做真正喜欢的事。',
-      '合上这张贺卡后，今夜的烟花会为你升空。愿你一直健康、开心、自在，新的一岁万事顺心。',
+      'Steven，二十二岁生日快乐。刚刚在星空里点亮的每一帧画面，都是这一年里因为有你而格外闪光的日常。',
+      '新的一岁不必急着赶路，愿你三餐温暖、夜夜好眠，在热爱的事里尽情发光，疲惫时也总有随时可以停靠的港湾。',
+      '合上这张贺卡后，今夜的烟花会为你绽放。愿你一直自由、真诚、明亮，二十二岁万事顺意。',
     ],
-    signature: '你的朋友',
+    signature: '一直陪伴你的朋友',
     closeCardLabel: '合上贺卡',
   },
 
   finaleWish: {
-    title: '生日快乐',
-    subtitle: '愿新的一岁，平安顺遂，烟火常新',
+    title: 'Steven，22 岁生日快乐',
+    subtitle: '愿二十二岁的每一天，都闪闪发光',
   },
 
   audio: {
     enabled: true,
-    customBgmUrl: '', // 示例 Example: './audio/bgm.mp3'
-    volume: 0.55,
+    customBgmUrl: './audio/bgm.mp3',
+    volume: 0.65,
   },
 };

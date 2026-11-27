@@ -171,7 +171,10 @@ function cloneConfig(config: BirthdayCardConfig): BirthdayCardConfig {
 
 function stripDemoMemories(config: BirthdayCardConfig): BirthdayCardConfig {
   config.memories = config.memories.filter(
-    (memory) => typeof memory.image === 'string' && memory.image.trim().length > 0,
+    (memory) =>
+      typeof memory.image === 'string' &&
+      memory.image.trim().length > 0 &&
+      !/(?:^|\/)demo\//i.test(memory.image.trim()),
   );
   return config;
 }

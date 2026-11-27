@@ -242,10 +242,10 @@ describe('validateCardConfig', () => {
   it('validates the default cardConfig cleanly with zero warnings', () => {
     const { config, warnings } = validateCardConfig(cardConfig);
     expect(warnings).toEqual([]);
-    expect(config.age).toBe(24);
+    expect(config.age).toBe(22);
     expect(config.densityMode).toBe('auto');
     expect(config.layoutSeed).toBe(20261126);
-    expect(config.memories).toHaveLength(6);
+    expect(config.memories).toHaveLength(5);
   });
 
   it('clamps age, deduplicates memory IDs, clamps audio volume, and validates densityMode & pinnedSlotIndex', () => {

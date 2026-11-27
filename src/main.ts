@@ -52,6 +52,36 @@ function withBase(routePath: string): string {
   return `${BASE_PATH.replace(/\/$/, '')}${routePath}`;
 }
 
+/**
+ * Resolves built-in relative asset URLs (`./audio/...`, `./demo/...`) against
+ * `withBase()` so they never 404 under subpaths like `/repo/create/` or `/repo/c/:id`.
+ * Leaves external `http(s)://`, `data:`, and `blob:` URLs untouched.
+ */
+function resolveBuiltInAssetUrl(rawUrl: string): string {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return '';
+  if (/^(?:https?:|data:|blob:|\/\/)/i.test(trimmed)) return trimmed;
+  const builtInMatch = /^(?:\.\/|\/)?((?:audio|demo)\/.+)$/i.exec(trimmed);
+  if (builtInMatch?.[1]) {
+    return withBase(`/${builtInMatch[1]}`);
+  }
+  return trimmed;
+}
+
+function normalizeBuiltInAssetUrls(config: BirthdayCardConfig): BirthdayCardConfig {
+  return {
+    ...config,
+    audio: {
+      ...config.audio,
+      customBgmUrl: resolveBuiltInAssetUrl(config.audio.customBgmUrl),
+    },
+    memories: config.memories.map((memory) => ({
+      ...memory,
+      image: resolveBuiltInAssetUrl(memory.image),
+    })),
+  };
+}
+
 function parseRoute(): AppRoute {
   const hash = window.location.hash.replace(/^#/, '').trim();
   if (hash === '/create' || hash === '/create/') {
@@ -219,7 +249,8 @@ function bootstrap(): void {
       onExitRehearsal?: () => void;
     }
   ): { scene: SceneApp; overlay: OverlayUI; sound: SoundEngine; config: BirthdayCardConfig } => {
-    const { config, warnings } = validateCardConfig(rawConfig);
+    const { config: validatedConfig, warnings } = validateCardConfig(rawConfig);
+    const config = normalizeBuiltInAssetUrls(validatedConfig);
     updateDocumentTitle(config, opts.studioMode ? '制作生日贺卡' : undefined);
 
     const sound = new SoundEngine(config.audio);
@@ -691,7 +722,10 @@ function bootstrap(): void {
       const stripPlaceholderMemories = (raw: BirthdayCardConfig): BirthdayCardConfig => ({
         ...raw,
         memories: raw.memories.filter(
-          (memory) => typeof memory.image === 'string' && memory.image.trim().length > 0,
+          (memory) =>
+            typeof memory.image === 'string' &&
+            memory.image.trim().length > 0 &&
+            !/(?:^|\/)demo\//i.test(memory.image.trim()),
         ),
       });
 
@@ -727,7 +761,8 @@ function bootstrap(): void {
         defaultConfig: cleanDefaultConfig,
         shareClient,
         onConfigChange: (nextConfig, opts) => {
-          const { config: validated } = validateCardConfig(nextConfig);
+          const { config: validatedRaw } = validateCardConfig(nextConfig);
+          const validated = normalizeBuiltInAssetUrls(validatedRaw);
           mounted.overlay.updateConfig(validated);
           mounted.sound.setMuted(!validated.audio.enabled);
           mounted.overlay.setAudioState(mounted.sound.isPlaying(), mounted.sound.isMuted());
@@ -760,7 +795,8 @@ function bootstrap(): void {
           triggerViewportResize();
         },
         onPreviewFullCard: (previewConfig) => {
-          const { config: validated } = validateCardConfig(previewConfig);
+          const { config: validatedRaw } = validateCardConfig(previewConfig);
+          const validated = normalizeBuiltInAssetUrls(validatedRaw);
           inRehearsal = true;
           appEl.classList.add('is-studio-rehearsal');
           activeStudio?.setPreviewMode(true);
