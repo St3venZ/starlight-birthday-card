@@ -62,8 +62,10 @@ function spaFallbackPlugin(): Plugin {
   };
 }
 
+const isCloudflarePages = process.env.CF_PAGES === '1';
+
 export default defineConfig({
-  base: './',
+  base: isCloudflarePages ? '/' : './',
   plugins: [spaFallbackPlugin()],
   build: {
     outDir: 'dist',
