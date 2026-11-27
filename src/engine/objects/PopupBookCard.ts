@@ -8,7 +8,7 @@ import { clamp, damp, easeOutCubic } from '../utils/math';
 
 const PAGE_W = 2.58;
 const PAGE_H = 3.56;
-const CARD_T = 0.022;
+const CARD_T = 0.054;
 
 interface OpacityEntry {
   material: THREE.Material;
@@ -217,12 +217,12 @@ export class PopupBookCard {
     // ─── Matte Cotton-Paper & Brushed Champagne-Gold Materials ───────
     const paperEdgeMat = this.trackMaterial(
       new THREE.MeshStandardMaterial({
-        color: 0xd8d3cb,
-        emissive: 0x35322d,
-        emissiveIntensity: 0.22,
-        roughness: 0.96,
+        color: 0xc8bfb0,
+        emissive: 0x2e2a25,
+        emissiveIntensity: 0.15,
+        roughness: 0.94,
         metalness: 0.0,
-        envMapIntensity: 0.08,
+        envMapIntensity: 0.1,
       }),
       1,
     );
@@ -324,24 +324,26 @@ export class PopupBookCard {
       1,
     );
 
-    // ─── Crisp Folded Paper Crease at Spine (x = 0, no book ribs!) ───
+    // ─── Crisp Folded Paper Crease at Spine (x = 0, no overlapping caps) ─
     const creaseGeo = this.trackGeometry(
       new THREE.CylinderGeometry(
-        CARD_T * 1.02,
-        CARD_T * 1.02,
-        PAGE_H,
+        CARD_T * 0.56,
+        CARD_T * 0.56,
+        PAGE_H - 0.004,
         16,
         1,
-        false,
+        true,
         Math.PI,
         Math.PI,
       ),
     );
     const creaseMesh = new THREE.Mesh(creaseGeo, paperEdgeMat);
-    creaseMesh.position.set(0, 0, 0);
+    creaseMesh.position.set(0, 0, -CARD_T * 0.02);
     this.bookPivot.add(creaseMesh);
 
-    // ─── Right Card Leaf (White Back + Right Inner Page) ─────────────
+    // ─── Right Card Leaf (White Back + Right Inner Page directly on Box faces) ─
+    // Mapping page textures onto the BoxGeometry +z / -z material slots removes
+    // coplanar floating PlaneGeometry layers, eliminating Z-fighting at every zoom.
     this.rightLeafPivot.position.set(0, 0, -CARD_T * 0.52);
     this.bookPivot.add(this.rightLeafPivot);
 
@@ -351,38 +353,32 @@ export class PopupBookCard {
       paperEdgeMat,
       paperEdgeMat,
       paperEdgeMat,
-      paperEdgeMat,
+      this.rightPageMat,
       paperBackMat,
     ]);
     rightBoard.position.set(PAGE_W * 0.5, 0, 0);
+    rightBoard.name = 'CardRightLeaf';
     this.rightLeafPivot.add(rightBoard);
 
-    const pageFaceGeo = this.trackGeometry(new THREE.PlaneGeometry(PAGE_W - 0.008, PAGE_H - 0.008));
-    const rightPage = new THREE.Mesh(pageFaceGeo, this.rightPageMat);
-    rightPage.position.set(PAGE_W * 0.5, 0, CARD_T * 0.5 + 0.002);
-    this.rightLeafPivot.add(rightPage);
-
-    // ─── Left Card Leaf (Pure White Front Cover + Left Inner Page) ───
+    // ─── Left Card Leaf (Pure White Front Cover + Left Inner Page directly on Box faces) ─
     this.leftLeafPivot.position.set(0, 0, CARD_T * 0.52);
     this.bookPivot.add(this.leftLeafPivot);
 
-    const leftBoard = new THREE.Mesh(cardLeafGeo, paperEdgeMat);
+    const leftBoard = new THREE.Mesh(cardLeafGeo, [
+      paperEdgeMat,
+      paperEdgeMat,
+      paperEdgeMat,
+      paperEdgeMat,
+      this.frontCoverMat,
+      this.leftPageMat,
+    ]);
     leftBoard.position.set(PAGE_W * 0.5, 0, 0);
+    leftBoard.name = 'CardFrontCover';
     this.leftLeafPivot.add(leftBoard);
-
-    const frontCover = new THREE.Mesh(pageFaceGeo, this.frontCoverMat);
-    frontCover.position.set(PAGE_W * 0.5, 0, CARD_T * 0.5 + 0.002);
-    frontCover.name = 'CardFrontCover';
-    this.leftLeafPivot.add(frontCover);
-    this.interactiveMeshes.push(frontCover);
-
-    const leftPage = new THREE.Mesh(pageFaceGeo, this.leftPageMat);
-    leftPage.position.set(PAGE_W * 0.5, 0, -CARD_T * 0.5 - 0.002);
-    leftPage.rotation.y = Math.PI;
-    this.leftLeafPivot.add(leftPage);
+    this.interactiveMeshes.push(leftBoard);
 
     // ─── Sleek Minimal Flat Champagne-Gold Circular Seal Sticker ─────
-    this.sealGroup.position.set(PAGE_W - 0.14, 0, CARD_T * 0.5 + 0.008);
+    this.sealGroup.position.set(PAGE_W - 0.14, 0, CARD_T * 0.5 + 0.012);
     this.leftLeafPivot.add(this.sealGroup);
 
     this.sealStickerMat = this.trackMaterial(
@@ -844,9 +840,15 @@ export class PopupBookCard {
     for (const entry of this.opacityEntries) {
       const factor = entry.isCake ? this.cardAlpha * this.cakeFactor : this.cardAlpha;
       const nextOpacity = entry.baseOpacity * factor;
-      const needsTransparent = entry.alwaysTransparent || factor < 0.995;
-      if (entry.material.transparent !== needsTransparent) {
+      const isFading = factor < 0.995;
+      const needsTransparent = entry.alwaysTransparent || isFading;
+      const nextDepthWrite = !isFading && entry.baseOpacity > 0.01;
+      if (
+        entry.material.transparent !== needsTransparent ||
+        entry.material.depthWrite !== nextDepthWrite
+      ) {
         entry.material.transparent = needsTransparent;
+        entry.material.depthWrite = nextDepthWrite;
         entry.material.needsUpdate = true;
       }
       entry.material.opacity = nextOpacity;

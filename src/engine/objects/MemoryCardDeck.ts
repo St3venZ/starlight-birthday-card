@@ -245,7 +245,7 @@ export class MemoryCardDeck {
   private readonly hitMeshes: THREE.Object3D[] = [];
 
   // Shared card geometries & hit material
-  private readonly cardThickness = 0.022;
+  private readonly cardThickness = 0.036;
   private readonly bodyGeo: THREE.BoxGeometry;
   private readonly faceGeo: THREE.PlaneGeometry;
   private readonly frameGeo: THREE.ExtrudeGeometry;
@@ -347,12 +347,14 @@ export class MemoryCardDeck {
     const thickness = this.cardThickness;
     const border = Math.min(w, h) * 0.028;
 
-    this.bodyGeo = this.trackGeo(new THREE.BoxGeometry(w * 0.98, h * 0.98, thickness));
+    this.bodyGeo = this.trackGeo(
+      new THREE.BoxGeometry(w - border * 1.96, h - border * 1.96, thickness),
+    );
     this.faceGeo = this.trackGeo(
       new THREE.PlaneGeometry(w - border * 1.9, h - border * 1.9),
     );
     this.frameGeo = this.trackGeo(
-      createRoundedFrameGeometry(w, h, border, thickness + 0.005),
+      createRoundedFrameGeometry(w, h, border, thickness + 0.008),
     );
     this.hitGeo = this.trackGeo(new THREE.BoxGeometry(w * 1.06, h * 1.06, 0.14));
 
@@ -1341,17 +1343,15 @@ export class MemoryCardDeck {
       opacity: 1,
     });
 
-    const bodyMesh = new THREE.Mesh(this.bodyGeo, bodyMat);
+    const bodyMesh = new THREE.Mesh(this.bodyGeo, [
+      bodyMat,
+      bodyMat,
+      bodyMat,
+      bodyMat,
+      frontMat,
+      backMat,
+    ]);
     root.add(bodyMesh);
-
-    const frontMesh = new THREE.Mesh(this.faceGeo, frontMat);
-    frontMesh.position.z = this.cardThickness * 0.5 + 0.0025;
-    root.add(frontMesh);
-
-    const backMesh = new THREE.Mesh(this.faceGeo, backMat);
-    backMesh.position.z = -this.cardThickness * 0.5 - 0.0025;
-    backMesh.rotation.y = Math.PI;
-    root.add(backMesh);
 
     const frameMesh = new THREE.Mesh(this.frameGeo, frameMat);
     root.add(frameMesh);
@@ -1545,9 +1545,19 @@ export class MemoryCardDeck {
 
   private applyCardMaterials(entry: CardEntry, alpha: number): void {
     const a = clamp(alpha, 0, 1);
+    const isTransparent = a < 0.995;
+    const depthWrite = !isTransparent;
+    entry.frontMat.transparent = isTransparent;
+    entry.frontMat.depthWrite = depthWrite;
     entry.frontMat.opacity = a;
+    entry.backMat.transparent = isTransparent;
+    entry.backMat.depthWrite = depthWrite;
     entry.backMat.opacity = a;
+    entry.bodyMat.transparent = isTransparent;
+    entry.bodyMat.depthWrite = depthWrite;
     entry.bodyMat.opacity = a;
+    entry.frameMat.transparent = isTransparent;
+    entry.frameMat.depthWrite = depthWrite;
     entry.frameMat.opacity = a;
     entry.root.visible = a > 0.01;
   }

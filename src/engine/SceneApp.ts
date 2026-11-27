@@ -283,7 +283,9 @@ export class SceneApp {
     this.scene.environment = this.envRT.texture;
     this.scene.environmentIntensity = 0.72;
 
-    this.camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 220);
+    // Near plane 0.4 keeps 4x higher depth-buffer precision across all zoom scales
+    // without ever clipping focused cards (focusDist >= 3.1).
+    this.camera = new THREE.PerspectiveCamera(42, width / height, 0.4, 220);
 
     // Clean Night-Sky Studio Lighting calibrated for crisp warm-white cardstock
     const hemiLight = new THREE.HemisphereLight(0xc2d4ff, 0x262840, 0.78);
@@ -1196,9 +1198,10 @@ export class SceneApp {
 
         this.cardPosCurrent.x = damp(this.cardPosCurrent.x, 0, 3.6, dt);
         this.cardPosCurrent.y = damp(this.cardPosCurrent.y, hearthY, 3.2, dt);
-        this.cardPosCurrent.z = damp(this.cardPosCurrent.z, -0.45, 3.2, dt);
+        this.cardPosCurrent.z = damp(this.cardPosCurrent.z, -0.55, 3.2, dt);
+        this.cardRotCurrent.x = damp(this.cardRotCurrent.x, 0.14, 3.2, dt);
         this.cardScaleCurrent = damp(this.cardScaleCurrent, 0.44, 3.2, dt);
-        this.cardAlphaCurrent = damp(this.cardAlphaCurrent, 0.34, 3.2, dt);
+        this.cardAlphaCurrent = damp(this.cardAlphaCurrent, 1.0, 4.0, dt);
         this.cardOpenCurrent = damp(this.cardOpenCurrent, 1.0, 4, dt);
 
         this.applyCardTransform();
@@ -1212,21 +1215,26 @@ export class SceneApp {
 
       case 'MEMORY_EXPLORE':
       case 'PHOTO_FOCUS': {
-        const targetAlpha = this.act === 'PHOTO_FOCUS' ? 0.14 : 0.3;
-        const floatY = hearthY + Math.sin(this.totalElapsed * 0.85) * 0.04 * motion;
+        const isFocus = this.act === 'PHOTO_FOCUS';
+        const targetY = isFocus ? hearthY - 0.55 : hearthY;
+        const targetZ = isFocus ? -1.6 : -0.55;
+        const targetScale = isFocus ? 0.36 : 0.42;
+        const floatY = targetY + Math.sin(this.totalElapsed * 0.85) * 0.04 * motion;
 
         this.cardPosCurrent.x = damp(this.cardPosCurrent.x, 0, 3.2, dt);
         this.cardPosCurrent.y = damp(this.cardPosCurrent.y, floatY, 3.2, dt);
-        this.cardPosCurrent.z = damp(this.cardPosCurrent.z, -0.45, 3.2, dt);
-        this.cardRotCurrent.x = damp(this.cardRotCurrent.x, 0.04, 3.2, dt);
+        this.cardPosCurrent.z = damp(this.cardPosCurrent.z, targetZ, 3.2, dt);
+        this.cardRotCurrent.x = damp(this.cardRotCurrent.x, 0.14, 3.2, dt);
         this.cardRotCurrent.y = damp(
           this.cardRotCurrent.y,
           Math.sin(this.totalElapsed * 0.35) * 0.06 * motion,
           3.2,
           dt,
         );
-        this.cardScaleCurrent = damp(this.cardScaleCurrent, 0.42, 3.2, dt);
-        this.cardAlphaCurrent = damp(this.cardAlphaCurrent, targetAlpha, 4.0, dt);
+        this.cardScaleCurrent = damp(this.cardScaleCurrent, targetScale, 3.2, dt);
+        // Keep the resting keepsake card 100% solid opaque so it retains clear
+        // physical thickness and never suffers transparent mesh-sort flickering.
+        this.cardAlphaCurrent = damp(this.cardAlphaCurrent, 1.0, 4.0, dt);
         this.cardOpenCurrent = damp(this.cardOpenCurrent, 1.0, 4, dt);
 
         this.applyCardTransform();
@@ -1248,7 +1256,7 @@ export class SceneApp {
         );
         this.cardRotCurrent.z = damp(this.cardRotCurrent.z, 0, 3.4, dt);
         this.cardScaleCurrent = damp(this.cardScaleCurrent, 0.72, 3.2, dt);
-        this.cardAlphaCurrent = damp(this.cardAlphaCurrent, 0.82, 3.6, dt);
+        this.cardAlphaCurrent = damp(this.cardAlphaCurrent, 1.0, 4.0, dt);
         this.cardOpenCurrent = damp(this.cardOpenCurrent, 1.0, 4.2, dt);
 
         this.applyCardTransform();
