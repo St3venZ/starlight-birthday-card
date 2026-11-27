@@ -21,7 +21,7 @@ import {
   type PublishedCardRecord,
 } from './draftStore';
 import { compressPhotoFile, formatFileSize } from './imageCompressor';
-import { downloadPosterPng, generateSharePosterDataUrl } from './qrPoster';
+import { generateSharePosterDataUrl, savePosterToAlbum } from './qrPoster';
 
 export interface CreatorStudioOptions {
   mountEl: HTMLElement;
@@ -289,6 +289,9 @@ export class CreatorStudio {
   private publishError = '';
   private publishedResult: PublishCardResult | null = null;
   private posterDataUrl: string | null = null;
+  private posterLightboxOpen = false;
+  private posterSaveHint = '';
+  private wechatShareGuideOpen = false;
   private publishedHistory: PublishedCardRecord[] = [];
   private cloudConfigured: boolean | null = null;
   private copyFeedback = '';
@@ -514,6 +517,7 @@ export class CreatorStudio {
         ${this.renderActiveStepHtml()}
       </div>
       ${this.renderFooterHtml()}
+      ${this.renderPosterLightboxHtml()}
     `;
 
     const nextScroll = this.rootEl.querySelector<HTMLElement>('.studio-body');
@@ -1369,8 +1373,10 @@ export class CreatorStudio {
 
         <div class="studio-section">
           <div class="studio-section-head">
-            <h2 class="studio-section-title">生成专属分享链接</h2>
-            <span class="studio-section-sub">${escapeHtml(modeHint)}</span>
+            <h2 class="studio-section-title">生成专属分享链接与动态海报</h2>
+            <span class="studio-section-sub">${escapeHtml(modeHint)}（海报随姓名「${escapeHtml(
+              recipient
+            )}」与「${this.config.age} 岁」自动更新）</span>
           </div>
 
           <label class="studio-field">
@@ -1487,17 +1493,50 @@ export class CreatorStudio {
           </button>
           ${
             this.posterDataUrl
-              ? `<button type="button" class="studio-btn studio-btn-secondary studio-btn-sm" data-action="download-poster">下载白色分享海报 PNG</button>`
+              ? `<button type="button" class="studio-btn studio-btn-accent studio-btn-sm" data-action="download-poster">一键保存海报到相册</button>`
               : ''
           }
+          <button type="button" class="studio-btn studio-btn-secondary studio-btn-sm" data-action="share-wechat-card">
+            微信卡片转发
+          </button>
         </div>
+
+        ${
+          this.posterSaveHint
+            ? `<p class="poster-save-hint">${escapeHtml(this.posterSaveHint)}</p>`
+            : ''
+        }
+
+        ${
+          this.wechatShareGuideOpen
+            ? `
+          <div class="poster-wechat-guide">
+            <strong>如何以卡片形式发到微信好友对话框：</strong>
+            <ol>
+              <li>先点上方「立即打开预览」进入你的专属贺卡页（网址为 <code>/c/${escapeHtml(result.shortId)}</code>）</li>
+              <li>在微信内点右上角 <code>...</code> 按钮，选择「转发给朋友」即可发出带专属标题与封面的卡片</li>
+              <li>也可以把下方二维码海报一键保存到相册，直接发图给对方长按识别</li>
+            </ol>
+          </div>
+        `
+            : ''
+        }
 
         ${
           this.posterDataUrl
             ? `
           <div class="poster-preview-wrap">
-            <img class="poster-preview-img" src="${this.posterDataUrl}" alt="白色简约生日贺卡二维码海报" />
+            <img
+              class="poster-preview-img"
+              src="${this.posterDataUrl}"
+              alt="白色简约生日贺卡二维码海报"
+              data-action="open-poster-lightbox"
+              title="点击放大海报，手机端可长按保存相册"
+            />
           </div>
+          <p class="studio-hint poster-tap-tip">海报已自动写入「${escapeHtml(
+            this.config.recipientName.trim() || '你'
+          )}」与「${this.config.age} 岁」，点击海报可全屏放大或长按存相册。</p>
         `
             : ''
         }
@@ -1519,6 +1558,21 @@ export class CreatorStudio {
               ${isDeleting ? 'disabled' : ''}
             >${isDeleting ? '删除中…' : '删除此链接'}</button>
           </div>
+        </div>
+      </div>
+    `;
+  }
+
+  private renderPosterLightboxHtml(): string {
+    if (!this.posterLightboxOpen || !this.posterDataUrl) return '';
+    return `
+      <div class="poster-lightbox" role="dialog" aria-modal="true" aria-label="保存分享海报到相册" data-action="close-poster-lightbox">
+        <div class="poster-lightbox-inner" data-stop-lightbox="1">
+          <img class="poster-lightbox-img" src="${this.posterDataUrl}" alt="生日贺卡高清分享海报" />
+          <p class="poster-lightbox-tip">手机微信请长按上方海报，选择「保存图片」到相册或「转发给朋友」</p>
+          <button type="button" class="studio-btn studio-btn-secondary studio-btn-sm" data-action="close-poster-lightbox">
+            关闭预览
+          </button>
         </div>
       </div>
     `;
@@ -1580,6 +1634,13 @@ export class CreatorStudio {
         el.addEventListener('change', () => this.handleCheckboxAction(action ?? '', el.checked));
       } else {
         el.addEventListener('click', (evt) => {
+          if (
+            action === 'close-poster-lightbox' &&
+            el.classList.contains('poster-lightbox') &&
+            (evt.target as HTMLElement | null)?.closest('[data-stop-lightbox]')
+          ) {
+            return;
+          }
           evt.preventDefault();
           void this.handleClickAction(action ?? '', el);
         });
@@ -1703,11 +1764,13 @@ export class CreatorStudio {
     switch (field) {
       case 'recipientName':
         this.config.recipientName = el.value;
+        this.refreshPublishedPosterIfNeeded();
         this.scheduleDraftSave();
         this.emitConfigChange({ jumpToAct: 'AWAITING_OPEN' });
         break;
       case 'senderName':
         this.config.senderName = el.value;
+        this.refreshPublishedPosterIfNeeded();
         this.scheduleDraftSave();
         this.emitConfigChange({ jumpToAct: 'AWAITING_OPEN' });
         break;
@@ -1717,6 +1780,7 @@ export class CreatorStudio {
           this.config.age = clampAge(num);
           const slotEl = this.rootEl.querySelector<HTMLElement>('[data-live="age-slots"]');
           if (slotEl) slotEl.textContent = this.getAgeSlotHintText();
+          this.refreshPublishedPosterIfNeeded();
           this.scheduleDraftSave();
           this.emitConfigChange({ jumpToAct: 'AWAITING_OPEN' });
         }
@@ -1724,11 +1788,13 @@ export class CreatorStudio {
       }
       case 'birthdayDate':
         this.config.birthdayDate = el.value;
+        this.refreshPublishedPosterIfNeeded();
         this.scheduleDraftSave();
         this.emitConfigChange({ jumpToAct: 'AWAITING_OPEN' });
         break;
       case 'coverSubtitle':
         this.config.coverSubtitle = el.value;
+        this.refreshPublishedPosterIfNeeded();
         this.scheduleDraftSave();
         this.emitConfigChange({ jumpToAct: 'AWAITING_OPEN' });
         break;
@@ -1832,7 +1898,26 @@ export class CreatorStudio {
       }
       case 'passcodeHintInput':
         this.passcodeHintInput = el.value;
+        this.refreshPublishedPosterIfNeeded();
         break;
+    }
+  }
+
+  private refreshPublishedPosterIfNeeded(): void {
+    if (!this.publishedResult) return;
+    this.posterDataUrl = generateSharePosterDataUrl({
+      shareUrl: this.publishedResult.shareUrl,
+      recipientName: this.config.recipientName || '你',
+      senderName: this.config.senderName || '你的朋友',
+      age: this.config.age,
+      birthdayDate: this.config.birthdayDate,
+      coverSubtitle: this.config.coverSubtitle,
+      hasPasscode: this.passcodeInput.trim().length === 4,
+      passcodeHint: this.passcodeHintInput.trim() || undefined,
+    });
+    const imgEl = this.rootEl.querySelector<HTMLImageElement>('.poster-preview-img');
+    if (imgEl && this.posterDataUrl) {
+      imgEl.src = this.posterDataUrl;
     }
   }
 
@@ -2170,7 +2255,62 @@ export class CreatorStudio {
             /[\\/:*?"<>|]/g,
             ''
           );
-          downloadPosterPng(this.posterDataUrl, `生日贺卡-${safeRecipient}-${this.config.age}岁.png`);
+          const outcome = await savePosterToAlbum(
+            this.posterDataUrl,
+            `生日贺卡-${safeRecipient}-${this.config.age}岁.png`
+          );
+          if (this.disposed) return;
+          if (outcome === 'lightbox') {
+            this.posterLightboxOpen = true;
+            this.posterSaveHint = '微信端已为你打开高清海报，长按图片即可保存到相册。';
+          } else if (outcome === 'shared') {
+            this.posterSaveHint = '已调起系统分享与保存图像面板。';
+          } else {
+            this.posterSaveHint = '海报 PNG 已开始下载保存。';
+          }
+          this.render();
+        }
+        break;
+      case 'open-poster-lightbox':
+        if (this.posterDataUrl) {
+          this.posterLightboxOpen = true;
+          this.render();
+        }
+        break;
+      case 'close-poster-lightbox':
+        if (this.posterLightboxOpen) {
+          this.posterLightboxOpen = false;
+          this.render();
+        }
+        break;
+      case 'share-wechat-card':
+        if (this.publishedResult) {
+          const recipient = this.config.recipientName.trim() || '你';
+          const shareTitle =
+            recipient === '你'
+              ? `送你一份 ${this.config.age} 岁 3D 生日贺卡`
+              : `送给 ${recipient} 的 ${this.config.age} 岁 3D 生日贺卡`;
+          const shareText =
+            this.config.coverSubtitle.trim() ||
+            `点开纯白立体贺卡，翻阅专属 ${this.config.age} 岁星空照片墙与 3D 烟花`;
+
+          const isWeChat = /micromessenger/i.test(navigator.userAgent);
+          if (!isWeChat && typeof navigator.share === 'function') {
+            try {
+              await navigator.share({
+                title: shareTitle,
+                text: shareText,
+                url: this.publishedResult.shareUrl,
+              });
+              this.posterSaveHint = '已调起系统转发卡片。';
+              this.render();
+              break;
+            } catch (err) {
+              if (err instanceof Error && err.name === 'AbortError') break;
+            }
+          }
+          this.wechatShareGuideOpen = !this.wechatShareGuideOpen;
+          this.render();
         }
         break;
       case 'history-open': {
@@ -2534,12 +2674,15 @@ export class CreatorStudio {
       if (this.disposed) return;
 
       this.publishedResult = result;
+      this.posterSaveHint = '';
+      this.wechatShareGuideOpen = false;
       this.posterDataUrl = generateSharePosterDataUrl({
         shareUrl: result.shareUrl,
         recipientName: snapshot.recipientName || '你',
         senderName: snapshot.senderName || '你的朋友',
         age: snapshot.age,
         birthdayDate: snapshot.birthdayDate,
+        coverSubtitle: snapshot.coverSubtitle,
         hasPasscode: cleanPasscode.length === 4,
         passcodeHint: this.passcodeHintInput.trim() || undefined,
       });

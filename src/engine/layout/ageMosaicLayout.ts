@@ -23,7 +23,7 @@ const DEFAULT_LAYOUT_SEED = 20261126;
  * - deluxe (6×8，数字 1 窄宽 3)：25+ 张丰富回忆时的丰盈画卷。
  * 0/6/8/9 均柔化四角，且按单字真实宽度比例排布字距（数字 1 绝无尴尬大空隙）。
  */
-const GLYPH_SETS: Record<ResolvedMosaicDensity, { rows: number; glyphs: Record<string, readonly string[]> }> = {
+export const GLYPH_SETS: Record<ResolvedMosaicDensity, { rows: number; glyphs: Record<string, readonly string[]> }> = {
   compact: {
     rows: 6,
     glyphs: {
@@ -102,9 +102,9 @@ const GLYPH_SETS: Record<ResolvedMosaicDensity, { rows: number; glyphs: Record<s
       '9': [
         '.XX.',
         'X..X',
+        'X..X',
         '.XXX',
         '...X',
-        'X..X',
         '.XX.',
       ],
     },
@@ -199,7 +199,7 @@ const GLYPH_SETS: Record<ResolvedMosaicDensity, { rows: number; glyphs: Record<s
         'X...X',
         '.XXXX',
         '....X',
-        'X...X',
+        '....X',
         '.XXX.',
       ],
     },
@@ -301,10 +301,10 @@ const GLYPH_SETS: Record<ResolvedMosaicDensity, { rows: number; glyphs: Record<s
         '.XXXX.',
         'X....X',
         'X....X',
+        'X....X',
         '.XXXXX',
         '.....X',
         '.....X',
-        'X....X',
         '.XXXX.',
       ],
     },

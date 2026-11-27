@@ -2609,6 +2609,87 @@ body {
   border: 1px solid rgba(36, 35, 33, 0.12);
   box-shadow: 0 12px 28px rgba(36, 35, 33, 0.14);
   display: block;
+  cursor: zoom-in;
+  -webkit-touch-callout: default;
+  user-select: auto;
+}
+
+.poster-tap-tip {
+  text-align: center;
+  margin-top: -4px;
+}
+
+.poster-save-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--gold-ink);
+  background: rgba(197, 155, 95, 0.11);
+  border: 1px solid rgba(197, 155, 95, 0.28);
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+
+.poster-wechat-guide {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-dark);
+  background: var(--paper-warm);
+  border: 1px solid var(--paper-hairline);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.poster-wechat-guide ol {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.poster-wechat-guide code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(36, 35, 33, 0.08);
+  font-size: 11px;
+}
+
+.poster-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(5, 7, 18, 0.88);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.poster-lightbox-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-width: min(420px, 92vw);
+  max-height: 92vh;
+}
+
+.poster-lightbox-img {
+  max-width: 100%;
+  max-height: calc(92vh - 96px);
+  width: auto;
+  height: auto;
+  border-radius: 10px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+  -webkit-touch-callout: default;
+  user-select: auto;
+}
+
+.poster-lightbox-tip {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+  color: #f3e6cb;
 }
 
 .studio-manage-box {

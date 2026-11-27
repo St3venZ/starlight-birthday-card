@@ -549,6 +549,7 @@ export interface SharePosterOptions {
   senderName: string;
   age: number;
   birthdayDate: string;
+  coverSubtitle?: string;
   hasPasscode: boolean;
   passcodeHint?: string;
 }
@@ -654,8 +655,8 @@ export function generateSharePosterDataUrl(opts: SharePosterOptions): string {
   ctx.fillStyle = '#9C7A46';
   ctx.font = `500 22px ${sans}`;
   const dateLabel = opts.birthdayDate.trim()
-    ? `BIRTHDAY CARD  ·  ${opts.birthdayDate.trim()}`
-    : 'BIRTHDAY CARD  ·  3D 生日贺卡';
+    ? `BIRTHDAY CARD  |  ${opts.birthdayDate.trim()}`
+    : 'BIRTHDAY CARD  |  3D 生日贺卡';
   ctx.fillText(dateLabel, W / 2, 132);
 
   // 4. Editorial serif title
@@ -675,8 +676,8 @@ export function generateSharePosterDataUrl(opts: SharePosterOptions): string {
   ctx.fillStyle = '#B8955A';
   drawFourPointStar(ctx, W / 2, 286, 8, 2.5);
 
-  // 5. Crisp age numeral & recipient dedication
-  const safeAge = Math.max(1, Math.min(999, Math.round(opts.age || 24)));
+  // 5. Crisp age numeral & recipient dedication (dynamically reflects user inputs)
+  const safeAge = Math.max(1, Math.min(999, Math.round(opts.age || 22)));
   const recipient = opts.recipientName.trim() || '你';
   const sender = opts.senderName.trim() || '你的朋友';
 
@@ -689,12 +690,14 @@ export function generateSharePosterDataUrl(opts: SharePosterOptions): string {
   const recipientLine =
     recipient === '你'
       ? `祝你 ${safeAge} 岁生日快乐`
-      : `致 ${recipient} · ${safeAge} 岁生日快乐`;
+      : `致 ${recipient}  ${safeAge} 岁生日快乐`;
   ctx.fillText(recipientLine, W / 2, 496);
 
   ctx.fillStyle = '#706A61';
   ctx.font = `400 24px ${sans}`;
-  ctx.fillText('为你准备了一张可翻阅的 3D 生日贺卡', W / 2, 548);
+  const rawSub = opts.coverSubtitle?.trim() || '为你准备了一张可翻阅的 3D 生日贺卡';
+  const subLine = rawSub.length > 26 ? `${rawSub.slice(0, 25)}…` : rawSub;
+  ctx.fillText(subLine, W / 2, 548);
 
   // 6. Elevated white QR frame
   const frameSize = 468;
@@ -772,13 +775,86 @@ export function generateSharePosterDataUrl(opts: SharePosterOptions): string {
   return canvas.toDataURL('image/png');
 }
 
-export function downloadPosterPng(dataUrl: string, filename: string): void {
+function dataUrlToBlob(dataUrl: string): Blob {
+  const [header, base64] = dataUrl.split(',');
+  const mimeMatch = header?.match(/data:([^;]+)/);
+  const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+  const binary = atob(base64 || '');
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mime });
+}
+
+function isWeChatBrowser(): boolean {
+  return typeof navigator !== 'undefined' && /micromessenger/i.test(navigator.userAgent);
+}
+
+function isTouchMobile(): boolean {
+  if (typeof window === 'undefined') return false;
+  return (
+    window.matchMedia?.('(pointer: coarse)').matches ||
+    /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent)
+  );
+}
+
+export type SavePosterOutcome = 'shared' | 'downloaded' | 'lightbox';
+
+/**
+ * 跨端「一键保存海报到相册」：
+ * - 微信内置浏览器：禁止程序直存相册，返回 'lightbox' 打开全屏高清图供长按直存相册 / 转发；
+ * - iOS Safari / 支持系统文件分享的手机浏览器：调起系统原生保存图像面板；
+ * - 桌面端浏览器：通过 Blob URL 一键直接下载 PNG。
+ */
+export async function savePosterToAlbum(
+  dataUrl: string,
+  filename: string
+): Promise<SavePosterOutcome> {
   const safeName = filename.toLowerCase().endsWith('.png') ? filename : `${filename}.png`;
-  const link = document.createElement('a');
-  link.href = dataUrl;
-  link.download = safeName;
-  link.rel = 'noopener';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+
+  if (isWeChatBrowser()) {
+    return 'lightbox';
+  }
+
+  const blob = dataUrlToBlob(dataUrl);
+
+  if (isTouchMobile() && typeof File !== 'undefined' && typeof navigator.share === 'function') {
+    try {
+      const file = new File([blob], safeName, { type: 'image/png' });
+      const canShareFiles =
+        typeof navigator.canShare === 'function' ? navigator.canShare({ files: [file] }) : false;
+      if (canShareFiles) {
+        await navigator.share({
+          files: [file],
+          title: safeName.replace(/\.png$/i, ''),
+        });
+        return 'shared';
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        return 'shared';
+      }
+      // Fall through to Blob download / lightbox
+    }
+  }
+
+  try {
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = safeName;
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 2500);
+    return isTouchMobile() ? 'lightbox' : 'downloaded';
+  } catch {
+    return 'lightbox';
+  }
+}
+
+export function downloadPosterPng(dataUrl: string, filename: string): void {
+  void savePosterToAlbum(dataUrl, filename);
 }
