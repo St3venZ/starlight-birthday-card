@@ -24,6 +24,11 @@ function spaFallbackPlugin(): Plugin {
     name: 'spa-fallback',
     apply: 'build',
     closeBundle() {
+      // Cloudflare Pages automatically enables native HTTP 200 SPA fallback for all
+      // non-asset routes when no custom 404.html exists in dist/.
+      if (process.env.CF_PAGES === '1') {
+        return;
+      }
       const dist = join(process.cwd(), 'dist');
       const html = readFileSync(join(dist, 'index.html'), 'utf8');
 
