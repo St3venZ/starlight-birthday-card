@@ -1909,6 +1909,13 @@ body {
   cursor: not-allowed;
 }
 
+.studio-ghost-btn.is-confirm-armed {
+  color: #b43c2f;
+  border-color: rgba(180, 60, 47, 0.36);
+  background: rgba(180, 60, 47, 0.08);
+  font-weight: 600;
+}
+
 .studio-file-label {
   cursor: pointer;
   border-color: rgba(36, 35, 33, 0.16);

@@ -560,9 +560,11 @@ export class OverlayUI {
     const allLit = safeTotal > 0 && safeLit >= safeTotal;
 
     this.starTrackEl.classList.toggle('is-all-lit', allLit);
+    this.cruiseBtn.hidden = safeTotal === 0;
 
     if (safeTotal === 0) {
       this.progressCaptionEl.textContent = '回忆已就绪';
+      this.nextBtn.hidden = true;
     } else if (allLit) {
       this.progressCaptionEl.textContent = `全部 ${safeTotal} 段回忆已点亮`;
     } else {

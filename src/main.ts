@@ -229,6 +229,7 @@ function bootstrap(): void {
     const syncAudioUI = (): void => {
       overlay?.setAudioState(sound.isPlaying(), sound.isMuted());
     };
+    sound.setOnStateChange(syncAudioUI);
 
     const unlockAudioOnce = (): void => {
       if (!config.audio.enabled || sound.isMuted()) {
@@ -237,7 +238,7 @@ function bootstrap(): void {
       if (!sound.isPlaying()) {
         sound.unlockAndStart();
         syncAudioUI();
-        window.setTimeout(syncAudioUI, 120);
+        window.setTimeout(syncAudioUI, 160);
       }
     };
 
@@ -263,16 +264,22 @@ function bootstrap(): void {
         sceneApp?.focusMemoryById(id);
       },
       onToggleMute: () => {
+        if (!sound.isMuted() && !sound.isPlaying()) {
+          // If audio has not actually unlocked yet (common in WeChat WKWebView),
+          // tapping the sound button should unlock and start rather than mute.
+          sound.setMuted(false);
+          sound.unlockAndStart();
+          syncAudioUI();
+          window.setTimeout(syncAudioUI, 160);
+          return;
+        }
         const nextMuted = !sound.isMuted();
         sound.setMuted(nextMuted);
-        // Turning sound on must also *start* playback. Previously the button only
-        // unmuted, so on WeChat the first tap produced silence until the user
-        // interacted with the card itself.
         if (!nextMuted && !sound.isPlaying()) {
           sound.unlockAndStart();
         }
         syncAudioUI();
-        window.setTimeout(syncAudioUI, 140);
+        window.setTimeout(syncAudioUI, 160);
       },
       onToggleAutoCruise: () => {
         if (!sceneApp) return;
@@ -340,11 +347,20 @@ function bootstrap(): void {
     const removeGestureUnlockers = (): void => {
       window.removeEventListener('pointerdown', firstGestureHandler, true);
       window.removeEventListener('touchstart', firstGestureHandler, true);
+      window.removeEventListener('touchend', firstGestureHandler, true);
+      window.removeEventListener('click', firstGestureHandler, true);
       window.removeEventListener('keydown', firstGestureHandler, true);
       window.removeEventListener('wheel', firstGestureHandler, true);
     };
 
-    const firstGestureHandler = (): void => {
+    const firstGestureHandler = (event: Event): void => {
+      // Never intercept taps on the dedicated sound button itself — otherwise
+      // capture-phase pointerdown unlocks audio and flips audioPlaying=true
+      // right before the button's click fires, causing click to immediately mute.
+      const target = event.target as Element | null;
+      if (target?.closest?.('.ui-sound-btn')) {
+        return;
+      }
       unlockAudioOnce();
       syncAudioUI();
       if (sound.isPlaying()) {
@@ -354,14 +370,22 @@ function bootstrap(): void {
 
     // Music should come up on its own. Browsers forbid audible playback until the
     // visitor has interacted, so we attempt it immediately and retry on the very
-    // first gesture (touch, click, key or scroll) anywhere on the page. This also
-    // covers the Studio, where music previously never started at all.
+    // first gesture (touch, click, key or scroll) anywhere on the page. Including
+    // touchend & click ensures iOS WeChat WKWebView receives a valid gesture.
     if (config.audio.enabled && !sound.isMuted()) {
       window.addEventListener('pointerdown', firstGestureHandler, {
         capture: true,
         passive: true,
       });
       window.addEventListener('touchstart', firstGestureHandler, {
+        capture: true,
+        passive: true,
+      });
+      window.addEventListener('touchend', firstGestureHandler, {
+        capture: true,
+        passive: true,
+      });
+      window.addEventListener('click', firstGestureHandler, {
         capture: true,
         passive: true,
       });
@@ -664,10 +688,20 @@ function bootstrap(): void {
       appEl.classList.add('is-studio');
       studioRoot.hidden = false;
 
+      const stripPlaceholderMemories = (raw: BirthdayCardConfig): BirthdayCardConfig => ({
+        ...raw,
+        memories: raw.memories.filter(
+          (memory) => typeof memory.image === 'string' && memory.image.trim().length > 0,
+        ),
+      });
+
       const savedDraft = await loadDraft().catch(() => null);
       if (version !== routeVersion) return;
 
-      const initialConfig = savedDraft ?? cardConfig;
+      const cleanDefaultConfig = stripPlaceholderMemories(cardConfig);
+      const initialConfig = savedDraft
+        ? stripPlaceholderMemories(savedDraft)
+        : cleanDefaultConfig;
 
       const exitRehearsal = (): void => {
         if (!inRehearsal) return;
@@ -690,6 +724,7 @@ function bootstrap(): void {
       activeStudio = new CreatorStudio({
         mountEl: studioRoot,
         initialConfig: mounted.config,
+        defaultConfig: cleanDefaultConfig,
         shareClient,
         onConfigChange: (nextConfig, opts) => {
           const { config: validated } = validateCardConfig(nextConfig);

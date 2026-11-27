@@ -26,6 +26,7 @@ import { downloadPosterPng, generateSharePosterDataUrl } from './qrPoster';
 export interface CreatorStudioOptions {
   mountEl: HTMLElement;
   initialConfig: BirthdayCardConfig;
+  defaultConfig?: BirthdayCardConfig;
   shareClient: CardShareClient;
   onConfigChange: (config: BirthdayCardConfig, opts?: { jumpToAct?: SceneAct }) => void;
   onFocusMemory: (memoryId: string) => void;
@@ -168,6 +169,13 @@ function cloneConfig(config: BirthdayCardConfig): BirthdayCardConfig {
   return JSON.parse(JSON.stringify(config)) as BirthdayCardConfig;
 }
 
+function stripDemoMemories(config: BirthdayCardConfig): BirthdayCardConfig {
+  config.memories = config.memories.filter(
+    (memory) => typeof memory.image === 'string' && memory.image.trim().length > 0,
+  );
+  return config;
+}
+
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -286,13 +294,19 @@ export class CreatorStudio {
   private deleteBusyId: string | null = null;
   private dragMemoryId: string | null = null;
   private suppressNextPhotoClick = false;
+  private resetConfirmArmed = false;
+  private resetConfirmTimer: number | null = null;
 
   private rootEl: HTMLDivElement;
 
   constructor(options: CreatorStudioOptions) {
     this.options = options;
-    this.defaultConfig = cloneConfig(options.initialConfig);
-    this.config = this.ensureConfigDefaults(cloneConfig(options.initialConfig));
+    const cleanDefault = stripDemoMemories(
+      cloneConfig(options.defaultConfig ?? options.initialConfig),
+    );
+    const cleanInitial = stripDemoMemories(cloneConfig(options.initialConfig));
+    this.defaultConfig = cleanDefault;
+    this.config = this.ensureConfigDefaults(cleanInitial);
     this.selectedMemoryId = this.config.memories[0]?.id ?? null;
 
     this.rootEl = document.createElement('div');
@@ -323,6 +337,10 @@ export class CreatorStudio {
     if (this.statusResetTimer !== null) {
       window.clearTimeout(this.statusResetTimer);
       this.statusResetTimer = null;
+    }
+    if (this.resetConfirmTimer !== null) {
+      window.clearTimeout(this.resetConfirmTimer);
+      this.resetConfirmTimer = null;
     }
     this.options.mountEl.innerHTML = '';
   }
@@ -364,7 +382,8 @@ export class CreatorStudio {
     this.cloudConfigured = cloudReady;
 
     if (savedDraft) {
-      this.config = this.ensureConfigDefaults(cloneConfig(savedDraft));
+      const restored = stripDemoMemories(cloneConfig(savedDraft));
+      this.config = this.ensureConfigDefaults(restored);
       this.selectedMemoryId = this.config.memories[0]?.id ?? null;
       this.draftStatus = 'restored';
       this.emitConfigChange({ jumpToAct: 'AWAITING_OPEN' }, true);
@@ -525,7 +544,11 @@ export class CreatorStudio {
               class="studio-btn studio-btn-secondary studio-btn-sm studio-header-preview-btn"
               data-action="fullscreen-current"
             >全屏试看</button>
-            <button type="button" class="studio-ghost-btn" data-action="reset-draft">重置草稿</button>
+            <button
+              type="button"
+              class="studio-ghost-btn ${this.resetConfirmArmed ? 'is-confirm-armed' : ''}"
+              data-action="reset-draft"
+            >${this.resetConfirmArmed ? '确认重置' : '重置草稿'}</button>
             <button type="button" class="studio-ghost-btn" data-action="exit-studio">退出</button>
           </div>
         </div>
@@ -1888,14 +1911,34 @@ export class CreatorStudio {
         this.options.onExitStudio();
         break;
       case 'reset-draft': {
-        const ok = window.confirm('确定清空当前草稿并恢复默认示例内容吗？');
-        if (!ok) return;
+        if (!this.resetConfirmArmed) {
+          this.resetConfirmArmed = true;
+          this.uploadFeedback = '再点一次「确认重置」即可清空当前草稿。';
+          this.uploadError = false;
+          this.render();
+          if (this.resetConfirmTimer !== null) {
+            window.clearTimeout(this.resetConfirmTimer);
+          }
+          this.resetConfirmTimer = window.setTimeout(() => {
+            this.resetConfirmTimer = null;
+            if (!this.resetConfirmArmed || this.disposed) return;
+            this.resetConfirmArmed = false;
+            this.render();
+          }, 4000);
+          return;
+        }
+        this.resetConfirmArmed = false;
+        if (this.resetConfirmTimer !== null) {
+          window.clearTimeout(this.resetConfirmTimer);
+          this.resetConfirmTimer = null;
+        }
         await clearDraft();
         if (this.disposed) return;
         this.config = this.ensureConfigDefaults(cloneConfig(this.defaultConfig));
         this.selectedMemoryId = this.config.memories[0]?.id ?? null;
         this.draftStatus = 'idle';
-        this.uploadFeedback = '';
+        this.uploadFeedback = '草稿已清空，当前为空白创作底板。';
+        this.uploadError = false;
         this.publishError = '';
         this.publishedResult = null;
         this.posterDataUrl = null;

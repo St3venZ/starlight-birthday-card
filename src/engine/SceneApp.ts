@@ -171,6 +171,7 @@ export class SceneApp {
   private readonly envRT: THREE.WebGLRenderTarget;
   private readonly camera: THREE.PerspectiveCamera;
   private readonly composer: EffectComposer;
+  private readonly composerTarget: THREE.WebGLRenderTarget | null;
   private readonly bloomPass: UnrealBloomPass;
 
   private readonly backdrop: CosmicBackdrop;
@@ -300,8 +301,32 @@ export class SceneApp {
     warmFill.position.set(0, -3.5, 5.8);
     this.scene.add(warmFill);
 
-    // ─── Post-Processing Pipeline (Half-Resolution Selective HDR Bloom) ─
-    this.composer = new EffectComposer(this.renderer);
+    // ─── Post-Processing Pipeline (MSAA Target + Selective HDR Bloom) ─
+    const isWebGL2 = this.renderer.capabilities.isWebGL2;
+    const maxSamples = this.renderer.capabilities.maxSamples ?? 0;
+    const canMsaaHalfFloat =
+      isWebGL2 &&
+      maxSamples > 0 &&
+      this.renderer.extensions.has('EXT_color_buffer_float');
+    const isCoarseOrCompact =
+      window.matchMedia?.('(pointer: coarse)').matches ||
+      Math.min(window.innerWidth, window.innerHeight) < 768;
+    const desiredSamples = isCoarseOrCompact ? 2 : 4;
+    const msaaSamples = canMsaaHalfFloat ? Math.min(desiredSamples, maxSamples) : 0;
+    this.composerTarget =
+      msaaSamples > 0
+        ? new THREE.WebGLRenderTarget(
+            Math.max(1, Math.floor(width * this.currentPixelRatio)),
+            Math.max(1, Math.floor(height * this.currentPixelRatio)),
+            {
+              type: THREE.HalfFloatType,
+              samples: msaaSamples,
+            },
+          )
+        : null;
+    this.composer = this.composerTarget
+      ? new EffectComposer(this.renderer, this.composerTarget)
+      : new EffectComposer(this.renderer);
     this.composer.setPixelRatio(this.currentPixelRatio);
     this.composer.setSize(width, height);
     const renderPass = new RenderPass(this.scene, this.camera);
@@ -885,6 +910,7 @@ export class SceneApp {
 
     this.bloomPass.dispose();
     this.composer.dispose();
+    this.composerTarget?.dispose();
     this.scene.environment = null;
     this.envRT.dispose();
     this.renderer.dispose();
@@ -1029,8 +1055,8 @@ export class SceneApp {
   }
 
   private updatePerformanceWatchdog(rawDt: number): void {
-    // Ignore background tab pause spikes
-    if (rawDt <= 0 || rawDt > 0.25) return;
+    // Ignore background tab pause spikes and the initial hydration warmup window
+    if (rawDt <= 0 || rawDt > 0.25 || this.totalElapsed < 4.0) return;
 
     if (this.dprTrimCooldown > 0) {
       this.dprTrimCooldown = Math.max(0, this.dprTrimCooldown - rawDt);
@@ -1041,25 +1067,33 @@ export class SceneApp {
 
     if (this.fpsSampleTime >= 0.5) {
       const fps = this.fpsSampleFrames / this.fpsSampleTime;
-      if (fps < 44) {
+      // Only treat sustained <24 fps as genuine overload so 30fps mobile/WeChat
+      // power-saving modes never get downgraded into blurry low-DPR rendering.
+      if (fps < 24) {
         this.lowFpsDuration += this.fpsSampleTime;
       } else {
         this.lowFpsDuration = 0;
       }
 
+      const nativeDpr = window.devicePixelRatio || 1;
+      const minPixelRatio =
+        nativeDpr >= 2
+          ? Math.min(this.maxPixelRatio, 1.75)
+          : Math.min(this.maxPixelRatio, 1.25);
+
       if (
-        this.lowFpsDuration > 1.5 &&
+        this.lowFpsDuration > 2.5 &&
         this.dprTrimCooldown <= 0 &&
-        this.currentPixelRatio > 1.0
+        this.currentPixelRatio > minPixelRatio
       ) {
         this.currentPixelRatio = Math.max(
-          1.0,
+          minPixelRatio,
           Number((this.currentPixelRatio - 0.25).toFixed(2)),
         );
         this.renderer.setPixelRatio(this.currentPixelRatio);
         this.composer.setPixelRatio(this.currentPixelRatio);
         this.lowFpsDuration = 0;
-        this.dprTrimCooldown = 3.0;
+        this.dprTrimCooldown = 4.0;
       }
 
       this.fpsSampleTime = 0;

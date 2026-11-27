@@ -177,13 +177,36 @@ function getAudioContextConstructor(): typeof AudioContext | null {
  * sound button work instead of requiring a second interaction.
  */
 type WeixinBridgeWindow = Window & {
-  WeixinJSBridge?: { invoke: (name: string, params?: unknown) => void };
+  WeixinJSBridge?: {
+    invoke: (name: string, params?: unknown, callback?: () => void) => void;
+  };
   __wxjs_environment?: string;
 };
 
 function isWeChat(): boolean {
   if (typeof navigator === 'undefined') return false;
   return /micromessenger/i.test(navigator.userAgent);
+}
+
+function invokeWeChatAudioGrant(callback: () => void): void {
+  const w = window as WeixinBridgeWindow;
+  if (!w.WeixinJSBridge) {
+    callback();
+    return;
+  }
+  let called = false;
+  const runOnce = (): void => {
+    if (called) return;
+    called = true;
+    callback();
+  };
+  try {
+    // WeChat X5 & iOS WKWebView reliably grant media/WebAudio playback inside
+    // WeixinJSBridge.invoke('getNetworkType', ...) callbacks.
+    w.WeixinJSBridge.invoke('getNetworkType', {}, runOnce);
+  } catch {
+    runOnce();
+  }
 }
 
 function whenWeChatBridgeReady(callback: () => void): void {
@@ -194,13 +217,13 @@ function whenWeChatBridgeReady(callback: () => void): void {
 
   const w = window as WeixinBridgeWindow;
   if (w.WeixinJSBridge) {
-    callback();
+    invokeWeChatAudioGrant(callback);
     return;
   }
 
   const handler = (): void => {
     document.removeEventListener('WeixinJSBridgeReady', handler);
-    callback();
+    invokeWeChatAudioGrant(callback);
   };
   document.addEventListener('WeixinJSBridgeReady', handler, { once: true });
   // The event can fire before this script registers, so fall back to polling.
@@ -210,7 +233,7 @@ function whenWeChatBridgeReady(callback: () => void): void {
     if ((window as WeixinBridgeWindow).WeixinJSBridge) {
       window.clearInterval(poll);
       document.removeEventListener('WeixinJSBridgeReady', handler);
-      callback();
+      invokeWeChatAudioGrant(callback);
     } else if (attempts > 40) {
       window.clearInterval(poll);
     }
@@ -244,11 +267,34 @@ export class SoundEngine {
   private lastHoverSfxMs = 0;
   private lastFireworkSfxMs = 0;
   private hoverNoteIdx = 0;
+  private onStateChange?: () => void;
 
   constructor(config: BirthdayCardConfig['audio']) {
     this.config = config;
     this.baseVolume = Math.max(0, Math.min(1, Number.isFinite(config.volume) ? config.volume : 0.45));
     this.muted = !config.enabled;
+  }
+
+  public setOnStateChange(listener?: () => void): void {
+    this.onStateChange = listener;
+  }
+
+  private notifyStateChange(): void {
+    if (!this.disposed) {
+      this.onStateChange?.();
+    }
+  }
+
+  private primeSilentUnlockBuffer(ctx: AudioContext): void {
+    try {
+      const buffer = ctx.createBuffer(1, 1, 22050);
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(ctx.destination);
+      src.start(0);
+    } catch {
+      // Ignore if context forbids immediate node creation
+    }
   }
 
   public async tryAutoStart(): Promise<boolean> {
@@ -302,21 +348,18 @@ export class SoundEngine {
   public unlockAndStart(): void {
     if (this.disposed) return;
 
-    // WeChat only exposes its audio capability after the native bridge is ready.
-    // Retry once it is, otherwise the first tap silently does nothing.
-    if (isWeChat()) {
-      const w = window as WeixinBridgeWindow;
-      if (!w.WeixinJSBridge) {
-        whenWeChatBridgeReady(() => {
-          if (!this.disposed && !this.muted) {
-            this.startPlaybackNow();
-          }
-        });
-        // Still attempt immediately: newer WeChat builds allow direct playback.
-      }
-    }
-
+    // Attempt immediately inside the current user gesture first (required by
+    // iOS Safari / WeChat WKWebView), and on WeChat also run through the native
+    // WeixinJSBridge callback in case the WebView gates audio on the bridge.
     this.startPlaybackNow();
+
+    if (isWeChat()) {
+      whenWeChatBridgeReady(() => {
+        if (!this.disposed && !this.muted && !this.isPlaying()) {
+          this.startPlaybackNow();
+        }
+      });
+    }
   }
 
   /**
@@ -328,11 +371,28 @@ export class SoundEngine {
 
     this.ensureAudioGraph();
 
-    if (this.ctx && this.ctx.state !== 'running') {
-      this.ctx.resume().catch(() => {});
+    if (this.ctx) {
+      this.primeSilentUnlockBuffer(this.ctx);
+      if (this.ctx.state !== 'running') {
+        this.ctx
+          .resume()
+          .then(() => {
+            if (this.disposed) return;
+            if (!this.muted && !this.useCustomBgm()) {
+              this.startProceduralBgm();
+              this.playing = true;
+            }
+            this.applyGainTargets();
+            this.notifyStateChange();
+          })
+          .catch(() => {});
+      }
     }
 
-    if (this.muted) return;
+    if (this.muted) {
+      this.notifyStateChange();
+      return;
+    }
 
     if (this.useCustomBgm()) {
       void this.tryStartCustomAudio().then((ok) => {
@@ -343,6 +403,7 @@ export class SoundEngine {
           this.startProceduralBgm();
           this.playing = true;
         }
+        this.notifyStateChange();
       });
       return;
     }
@@ -350,7 +411,9 @@ export class SoundEngine {
     if (this.ctx) {
       this.startProceduralBgm();
       this.playing = true;
+      this.applyGainTargets();
     }
+    this.notifyStateChange();
   }
 
   public setMuted(muted: boolean): void {
@@ -363,8 +426,22 @@ export class SoundEngine {
       // promise chain loses the activation. resume() is therefore called here
       // without awaiting, and playback is started optimistically.
       this.ensureAudioGraph();
-      if (this.ctx && this.ctx.state !== 'running') {
-        this.ctx.resume().catch(() => {});
+      if (this.ctx) {
+        this.primeSilentUnlockBuffer(this.ctx);
+        if (this.ctx.state !== 'running') {
+          this.ctx
+            .resume()
+            .then(() => {
+              if (this.disposed) return;
+              if (!this.muted && !this.useCustomBgm()) {
+                this.startProceduralBgm();
+                this.playing = true;
+              }
+              this.applyGainTargets();
+              this.notifyStateChange();
+            })
+            .catch(() => {});
+        }
       }
       if (this.ctx && !this.useCustomBgm()) {
         this.startProceduralBgm();
@@ -382,9 +459,11 @@ export class SoundEngine {
           if (!this.disposed && ok) {
             this.playing = true;
           }
+          this.notifyStateChange();
         });
       }
     }
+    this.notifyStateChange();
   }
 
   public isMuted(): boolean {
@@ -538,6 +617,7 @@ export class SoundEngine {
       this.customAudio = null;
     }
 
+    this.onStateChange = undefined;
     if (this.ctx) {
       const toClose = this.ctx;
       this.ctx = null;
@@ -614,6 +694,15 @@ export class SoundEngine {
       this.sfxGain = sfxGain;
       this.reverbNode = reverbNode;
       this.noiseBuffer = this.createWarmNoiseBuffer(ctx, 1.5);
+      if (typeof ctx.addEventListener === 'function') {
+        ctx.addEventListener('statechange', () => {
+          if (this.disposed) return;
+          if (ctx.state === 'running' && !this.muted && this.playing && !this.useCustomBgm()) {
+            this.startProceduralBgm();
+          }
+          this.notifyStateChange();
+        });
+      }
       return true;
     } catch {
       return false;

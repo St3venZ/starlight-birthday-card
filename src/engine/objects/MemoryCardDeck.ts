@@ -325,7 +325,7 @@ export class MemoryCardDeck {
   private readonly tmpColor = new THREE.Color();
 
   // Slim warm-white Polaroid/cardstock frame palette (strictly below 0.92 bloom threshold except guided/wave)
-  private readonly colPresetIdle = new THREE.Color(0xdad5cc);
+  private readonly colPresetIdle = new THREE.Color(0xe4e0d8);
   private readonly colMemoryUnlit = new THREE.Color(0xe7e3db);
   private readonly colMemoryLit = new THREE.Color(0xf0e0ba);
   private readonly colGuided = new THREE.Color(1.04, 0.88, 0.54);
